@@ -18,27 +18,27 @@ const superAdmin = async () => {
     }
   try{
     const hashPassword = await bcrypt.hash(password, 12);
-      await User.create({
+    const newUser = await User.create({
         firstName,
         surName,
         email,  
         password: hashPassword,
         role: 'superAdmin',
         gender: 'male',
-        isVerify: true
+        isVerified: true
     }); 
 
     const profileImage = process.env.SUPER_ADMIN_PROFILE || process.env.SUPER_ADMIN_PROFILE;
 
     await userProfile.create({
-        userId: superAdminExits.id,
+        userId: newUser.id,
         image: profileImage
     });
     console.log('Super Admin created successfully');
     
   }
   catch(err){
-      console.error('Error creating Super Admin:', err);
+      console.error('Error creating Super Admin:', err.message);
   }
 
 }

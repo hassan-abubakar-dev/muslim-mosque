@@ -11,11 +11,10 @@ const validate = (schema) => {
                 status: 'fail',
                 message: errorMessages,
             });
-
-            next();
         }
-}
-
+        
+        next();
+    }
 }
 
 export default validate;

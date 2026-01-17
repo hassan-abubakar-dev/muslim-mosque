@@ -66,13 +66,4 @@ export const loginValidationSchema = Joi.object({
     }),
 });
 
-// Verification code validation schema
-export const verificationValidationSchema = Joi.object({
-  verificationCode: Joi.string()
-    .length(6)
-    .required()
-    .messages({
-      'string.empty': 'Verification code is required',
-      'string.length': 'Verification code must be exactly 6 characters',
-    }),
-});
+
