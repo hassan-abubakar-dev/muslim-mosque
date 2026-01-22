@@ -24,7 +24,7 @@ const Mosque = dbConnection.define(
         allowNull: false,
       },
 
-      local_government: {
+      localGovernment: {
         type: DataTypes.STRING,
         allowNull: false,
       },
@@ -37,6 +37,10 @@ const Mosque = dbConnection.define(
       status: {
         type: DataTypes.ENUM('pending', 'verified', 'rejected'),
         defaultValue: 'pending',
+      },
+      adminId: {
+        type: DataTypes.UUID,
+        allowNull: false,
       }
     },
     {

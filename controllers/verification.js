@@ -30,6 +30,7 @@ export const verifyNewUserAccount = async(req, res, next) => {
         await VerificationCode.destroy({where: {code: verificationCode}}, { transaction });
 
         const payload = {
+            id: user.id,
             firstName: user.firstName,
             surName: user.surName,
             email: user.email,
@@ -42,6 +43,7 @@ export const verifyNewUserAccount = async(req, res, next) => {
         const refreshToken = generateToken(payload, process.env.REFRESH_TOKEN_KEY, process.env.REFRESH_TOKEN_EXPERY);
 
         const safeUser = {
+            id: user.id,
             firstName: user.firstName,
             surName: user.surName,
             email: user.email,

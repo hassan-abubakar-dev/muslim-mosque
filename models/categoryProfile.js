@@ -1,14 +1,14 @@
 import { DataTypes, UUIDV4 } from "sequelize";
 import dbConnection from "../config/db.js";
 
-const mosqueProfile =  dbConnection.define('mosqueProfile', {
+const CategoryProfile =  dbConnection.define('CategoryProfile', {
 
     id: {
         type: DataTypes.UUID,
         defaultValue: UUIDV4,
         primaryKey: true
     }, 
-    image: {
+    image: { 
         type: DataTypes.STRING(225),
         allowNull: false
     },
@@ -22,10 +22,10 @@ const mosqueProfile =  dbConnection.define('mosqueProfile', {
     }
 },
 {
-    tableName: 'mosqueProfiles',
+    tableName: 'categoryProfiles',
     timestamps: true,
     underscored: true 
 }
 );
 
-export default mosqueProfile;
+export default CategoryProfile;

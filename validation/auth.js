@@ -57,7 +57,7 @@ export const loginValidationSchema = Joi.object({
     .messages({
       'string.email': 'Please provide a valid email address',
       'string.empty': 'Email is required',
-    }),
+    }),   
   
   password: Joi.string()
     .required()
