@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import User from '../models/user.js';
 import dotenv from 'dotenv';
-import userProfile from '../models/userProfile.js';
+import UserProfile from '../models/userProfile.js';
 dotenv.config();
 
 const superAdmin = async () => {
@@ -30,7 +30,7 @@ const superAdmin = async () => {
 
     const profileImage = process.env.SUPER_ADMIN_PROFILE || process.env.SUPER_ADMIN_PROFILE;
 
-    await userProfile.create({
+    await UserProfile.create({
         userId: newUser.id,
         image: profileImage
     });

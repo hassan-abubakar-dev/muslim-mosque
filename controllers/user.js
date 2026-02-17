@@ -1,5 +1,4 @@
 import User from "../models/user.js";
-import userProfile from "../models/userProfile.js";
 import AppError from "../utils/AppError.js";
 
 export const getLoggedInUser = async (req, res, next) => {

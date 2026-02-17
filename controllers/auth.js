@@ -47,7 +47,7 @@ export const registerUser = async(req, res, next) => {
       <h2>Welcome to Muslim Mosque</h2>
       <p>Hello ${firstName},</p>
       <p>Your verification code is:</p>
-      <h3>${verificationCode}</h3>
+      <h3 >${verificationCode}</h3>
       <p>If you did not sign up, ignore this email.</p>
     `;
 

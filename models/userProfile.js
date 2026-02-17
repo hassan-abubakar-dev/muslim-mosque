@@ -1,7 +1,7 @@
 import { DataTypes, UUIDV4 } from "sequelize";
 import dbConnection from "../config/db.js";
 
-const userProfile =  dbConnection.define('userProfile', {
+const UserProfile =  dbConnection.define('UserProfile', {
 
     id: {
         type: DataTypes.UUID,
@@ -28,4 +28,4 @@ const userProfile =  dbConnection.define('userProfile', {
 }
 );
 
-export default userProfile;
+export default UserProfile;

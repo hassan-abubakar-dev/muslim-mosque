@@ -1,7 +1,7 @@
 import { DataTypes, UUIDV4 } from "sequelize";
 import dbConnection from "../config/db.js";
 
-const mosqueProfile =  dbConnection.define('mosqueProfile', {
+const MosqueProfile =  dbConnection.define('MosqueProfile', {
 
     id: {
         type: DataTypes.UUID,
@@ -28,4 +28,4 @@ const mosqueProfile =  dbConnection.define('mosqueProfile', {
 }
 );
 
-export default mosqueProfile;
+export default MosqueProfile;

@@ -16,7 +16,12 @@ import mosqueRouter from './routes/mosque.js';
 import userRouter from './routes/user.js';
 import cookieParser from 'cookie-parser';
 import userProfileRouter from './routes/userProfile.js';
-import categoryRouter from './routes/category.js';
+import categoryRouter from './routes/category.js'; 
+import mosqueProfileRouter from './routes/mosqueProfile.js';
+import lectureRouter from './routes/lecture.js';
+import quranRouter from './routes/quran.js';
+import adzkarRouter from './routes/adzkar.js';
+
 
 dotenv.config();
 
@@ -34,24 +39,31 @@ app.use('/api/auths', authRouter);
 app.use('/api/verifications', verificationRouter);
 app.use('/api/mosques', mosqueRouter);
 app.use('/api/users', userRouter); 
-app.use('/api/profiles', userProfileRouter);  
+app.use('/api/profiles', userProfileRouter);
+app.use('/api/profiles', mosqueProfileRouter);  
 app.use('/api/categories', categoryRouter);
+app.use('/api/lectures', lectureRouter);
+app.use('/api/quran', quranRouter);
+app.use('/api/adzkar', adzkarRouter);
+
 
 // Error Handling Middleware
 app.use(errorHandler); 
+
+
 
 (async () => {
   try { 
       
     if(process.env.NODE_ENV === 'development'){            
       // for development use alter to update the existing tables
-      await dbConnection.sync();
-    } else {
+      await dbConnection.sync(); 
+    } else { 
       // for production use sync without alter
       await dbConnection.sync(); 
     };
       await superAdmin();
-    console.log("all models sync successfully.");
+    console.log("all models sync successfully.");   
 
     } catch (error) {
     console.error("Unable to connect to the database:", error);

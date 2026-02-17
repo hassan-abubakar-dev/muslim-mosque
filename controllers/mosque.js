@@ -1,6 +1,6 @@
 import dbConnection from "../config/db.js";
 import Mosque from "../models/mosque.js";
-import mosqueProfile from "../models/mosqueProfile.js";
+import MosqueProfile from "../models/mosqueProfile.js";
 import AppError from "../utils/AppError.js";
 
 export const registerMosque = async(req, res, next) => {
@@ -26,7 +26,7 @@ export const registerMosque = async(req, res, next) => {
             adminId: userId
         }, { transaction });
 
-        const profileMosque = await mosqueProfile.create({
+        const profileMosque = await MosqueProfile.create({
             mosqueId: newMosque.id,
             image: process.env.MOSQUE_DEFAULT_IMAGE
         }, { transaction });
@@ -48,7 +48,7 @@ export const registerMosque = async(req, res, next) => {
 
 export const getMosque = async(req, res, next) => {
     try{
-        const mosques = await Mosque.findAll({include: {model: mosqueProfile, as: 'mosqueProfile', attributes: ['image']}});
+        const mosques = await Mosque.findAll({include: {model: MosqueProfile, as: 'mosqueProfile', attributes: ['image']}});
         res.status(200).json({
             status: 'success',
             message: 'mosque fetched successfully',

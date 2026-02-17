@@ -14,9 +14,9 @@ const CategoryProfile =  dbConnection.define('CategoryProfile', {
     },
     publicId: {
         type: DataTypes.STRING(225),
-        allowNull: true
+        allowNull: false
     },
-    mosqueId: {
+    categoryId: {
         type: DataTypes.UUID,
         allowNull: false
     }

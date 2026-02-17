@@ -31,7 +31,7 @@ const User = dbConnection.define('User', {
         allowNull: false
     },
     role: {
-        type: DataTypes.ENUM('user', 'admin', 'superAdmin'),
+        type: DataTypes.ENUM('user', 'admin', 'superAdmin', 'agent'),
         defaultValue: 'user'
     },
     isVerify: {
