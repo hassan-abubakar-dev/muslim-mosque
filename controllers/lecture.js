@@ -5,6 +5,7 @@ import { deleteFileFromR2 } from "../utils/r2.js";
 import dotenv from "dotenv";
 import Notification from "../models/Notification.js";
 import Bookmark from "../models/bookmark.js";
+import { Op } from "sequelize";
 
 dotenv.config();
 
@@ -165,39 +166,42 @@ export const deleteLecture = async (req, res, next) => {
 };
 
 
+
 export const getLectures = async (req, res, next) => {
   try {
     const { categoryId } = req.params;
+    if (!categoryId) return next(new AppError("Category ID is required", 400));
 
-    if (!categoryId) {
-      return next(new AppError("Category ID is required", 400));
-    }
-
-    // ✅ check category exists
     const category = await Category.findByPk(categoryId);
-    if (!category) {
-      return next(new AppError("Category not found", 404));
-    }
+    if (!category) return next(new AppError("Category not found", 404));
 
-    let { userId, page = 1, limit = 10 } = req.query;
+    // Added 'search' to destructuring
+    let { userId, page = 1, limit = 10, search } = req.query;
 
     page = parseInt(page);
     limit = parseInt(limit);
-
     if (isNaN(page) || page < 1) page = 1;
     if (isNaN(limit) || limit < 1) limit = 10;
-
     const offset = (page - 1) * limit;
 
-    // 🔥 FORCE THE ASSOCIATION RIGHT HERE:
-    if (!Lecture.associations || !Lecture.associations.bookmarks) {
+    // Build the WHERE clause
+    const whereClause = { categoryId };
+    
+    // Add Search logic using 'like' for MySQL
+    if (search && search.trim() !== "") {
+      whereClause.title = {
+        [Op.like]: `%${search}%` 
+      };
+    }
+
+    // Association check
+    if (!Lecture.associations.bookmarks) {
       Lecture.hasMany(Bookmark, { foreignKey: 'lectureId', as: 'bookmarks', onDelete: 'CASCADE' });
       Bookmark.belongsTo(Lecture, { foreignKey: 'lectureId', as: 'lecture' });
     }
 
-    // 🚀 Fetch data with raw bookmarks array included
     const { rows: lectures, count } = await Lecture.findAndCountAll({
-      where: { categoryId },
+      where: whereClause, // 👈 Applied here
       distinct: true, 
       include: {
         model: Bookmark,
@@ -210,26 +214,15 @@ export const getLectures = async (req, res, next) => {
       order: [["createdAt", "DESC"]], 
     });
 
-    const totalPages = Math.ceil(count / limit);
-
-    // 💎 Sent exactly as-is without boolean conversion
     res.status(200).json({
       success: true,
-      message: "Lectures fetched successfully",
       currentPage: page,
-      totalPages,
+      totalPages: Math.ceil(count / limit),
       totalItems: count,
-      pageSize: limit,
-      lectures, // 👈 Look inside this array in your Postman response!
+      lectures,
     });
 
   } catch (err) {
-    console.error("Get lectures error:", err.message);
-    next(
-      new AppError(
-        process.env.NODE_ENV === "development" ? err.message : "Failed to fetch lectures",
-        500
-      )
-    );
+    next(new AppError(err.message, 500));
   }
 };
