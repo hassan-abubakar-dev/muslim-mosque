@@ -2,49 +2,53 @@ import cloudinary from "../config/claudinary.js";
 import MosqueProfile from "../models/mosqueProfile.js";
 import AppError from "../utils/AppError.js";
 
-export const updateMosqueProfile = async(req, res, next) => {
+export const updateMosqueProfile = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
 
-    try{
-        const userId = req.user.id;
-        if(!req.file){
-            return next(new AppError('you not upload image to update'));
-        }
+    const { imageUrl, publicId } = req.body;
+    const {mosqueId} = req.params;
 
-         if (req.file.size > 5 * 1024 * 1024) {
-            return next(new AppError("Image too large. Max 5MB", 400));
+    if (!imageUrl || !publicId) {
+      return next(
+        new AppError("imageUrl and publicId are required", 400)
+      );
     }
-   
-        cloudinary.uploader.upload_stream(
-            {folder: 'mosque-profile-image'},
-            async(err, result) => {
-                if(err && !result){
-                    return next(new AppError(process.env.NODE_ENV === 'development'
-                        ? err.message : 'something went wrong while uploading image'
-                    ));
-                }
-                const mosqueProfile = await MosqueProfile.findOne({where: {userId}});
-                if(!mosqueProfile){
-                    return next(new AppError('no profie for this mosque to update', 400));
-                };
-                const oldPublicId = mosqueProfile.publicId;
-                if(oldPublicId){
-                    cloudinary.uploader.destroy(oldPublicId);
-                };
-                mosqueProfile.image = result.secure_url;
-                mosqueProfile.publicId = result.public_id;
-                await mosqueProfile.save();
 
-                res.status(200).json({
-                    status: 'success',
-                    message: 'mosque profile updated successfully',
-                    mosqueProfile: mosqueProfile.image
-                });
-            }
-        )
+    const mosqueProfile = await MosqueProfile.findOne({
+      where: { mosqueId },
+    });
+
+    if (!mosqueProfile) {
+      return next(
+        new AppError("No profile found for this mosque", 404)
+      );
     }
-    catch(err){
-        next(new AppError(process.env.NODE_ENV === 'development' 
-            ? err.message : 'some thing went wrong while updating mosque profile try again'
-        ));
+
+    // delete old image from cloudinary
+    if (mosqueProfile.publicId) {
+      await cloudinary.uploader.destroy(mosqueProfile.publicId);
     }
-}
+
+    // update DB
+    mosqueProfile.image = imageUrl;
+    mosqueProfile.publicId = publicId;
+
+    await mosqueProfile.save();
+
+    return res.status(200).json({
+      status: "success",
+      message: "Mosque profile updated successfully",
+      mosqueProfile: mosqueProfile.image,
+    });
+  } catch (err) {
+    next(
+      new AppError(
+        process.env.NODE_ENV === "development"
+          ? err.message
+          : "Something went wrong while updating mosque profile",
+        500
+      )
+    );
+  }
+};

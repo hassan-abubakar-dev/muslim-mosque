@@ -25,7 +25,7 @@ const superAdmin = async () => {
         password: hashPassword,
         role: 'superAdmin',
         gender: 'male',
-        isVerified: true
+        isVerify: true
     }); 
 
     const profileImage = process.env.SUPER_ADMIN_PROFILE || process.env.SUPER_ADMIN_PROFILE;

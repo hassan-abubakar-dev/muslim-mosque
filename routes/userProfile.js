@@ -1,11 +1,11 @@
 import express from 'express';
-import { protectRoutes } from '../controllers/auth.js';
+import { protectRoutes } from '../middleware/auth.js';
 import { getUserProfile, updateUserProfile } from '../controllers/userProfile.js';
-import uploadToR2 from '../utils/upload2.js';
+
 
 const router = express.Router();
 
 router.get('/user-profile', protectRoutes, getUserProfile);
-router.put('/user-profile', protectRoutes, uploadToR2, updateUserProfile);
+router.put('/update-user-profile', protectRoutes,  updateUserProfile);
 
 export default router;

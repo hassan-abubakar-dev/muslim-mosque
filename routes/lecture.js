@@ -1,22 +1,13 @@
-import express from "express";
-import {
-  generateLectureUploadUrl,
-  saveLectureMetadata,
-  getLecturePlaybackUrl,
-  getAllLectures
-} from "../controllers/lecture.js";
-import { protectRoutes } from "../controllers/auth.js";
+import express from 'express';
+import dotenv from 'dotenv';
+import { saveLectureMetadata, deleteLecture, getLectures } from '../controllers/lecture.js';
+
+dotenv.config();
 
 const router = express.Router();
 
-// Generate signed PUT URL
-router.post("/generate-upload-url/:categoryId", protectRoutes, generateLectureUploadUrl);
-
-// Save metadata after upload
-router.post("/save-metadata/:categoryId", protectRoutes, saveLectureMetadata);
-
-// Generate signed GET URL for playback
-router.get("/play/:id", protectRoutes, getLecturePlaybackUrl);
-router.get('/all/:categoryId', protectRoutes, getAllLectures);
+router.post('/save-metadata/:categoryId', saveLectureMetadata);
+router.delete('/delete-lecture/:lectureId', deleteLecture);
+router.get('/get-lectures/:categoryId', getLectures);
 
 export default router;

@@ -37,10 +37,6 @@ const Mosque = dbConnection.define(
       status: {
         type: DataTypes.ENUM('pending', 'verified', 'rejected'),
         defaultValue: 'pending',
-      },
-      adminId: {
-        type: DataTypes.UUID,
-        allowNull: false,
       }
     },
     {

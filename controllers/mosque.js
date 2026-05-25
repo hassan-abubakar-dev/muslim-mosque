@@ -1,62 +1,438 @@
 import dbConnection from "../config/db.js";
-import Mosque from "../models/mosque.js";
-import MosqueProfile from "../models/mosqueProfile.js";
+import { FollowMosque, Mosque, MosqueAdmin, MosqueProfile, User } from "../models/relationship.js";
 import AppError from "../utils/AppError.js";
+import dotenv from "dotenv";
+import { Op, fn, col, literal } from "sequelize";
 
-export const registerMosque = async(req, res, next) => {
+dotenv.config();
+
+
+
+export const registerMosque = async (req, res, next) => {
     const transaction = await dbConnection.transaction();
-    try{
-        const {name, country, state, localGovernment, description} = req.body;
+    
+    try {
+        const { name, country, state, localGovernment, description } = req.body;
         const userId = req.user.id;
         
-        const mosque = await Mosque.findOne({where: {adminId: userId}});
+        // 1. Check for existing identical mosque registration matching parameters
+        const existingMosque = await Mosque.findOne({
+            where: { name, localGovernment }, 
+            transaction 
+        });
 
-        if(mosque){
+        if (existingMosque) {
             await transaction.rollback();
-           return next(new AppError('You have already registered a mosque', 400));
-        };
+            return next(new AppError('You have already registered a mosque with this name in this local government area.', 400));
+        }
         
+        // 2. Provision core Mosque entity record entry
         const newMosque = await Mosque.create({
             name,
             country,
             state,
             localGovernment,
             description,
-            status: 'pending',
-            adminId: userId
+            status: 'pending'
         }, { transaction });
 
-        const profileMosque = await MosqueProfile.create({
+        // 3. Bind submitting user as owner admin inside the tracking matrix table
+        await MosqueAdmin.create({
+            userId: userId,
+            mosqueId: newMosque.id,
+            role: 'owner'
+        }, { transaction });
+
+        // 4. Instantiate default profile row template placeholder asset
+        await MosqueProfile.create({
             mosqueId: newMosque.id,
             image: process.env.MOSQUE_DEFAULT_IMAGE
         }, { transaction });
 
+        // 5. Commit all structural record updates safely to save progress
         await transaction.commit();
 
-        res.status(201).json({
+        // 6. 🚀 NORMALIZE SCHEMA RESPONSE DATA: Re-query the database for the complete hydrated object layout
+        const fullyHydratedMosque = await Mosque.findOne({
+            where: { id: newMosque.id },
+            attributes: {
+                include: [
+                    // 📊 Fallback calculations match getMosques specifications exactly
+                    [
+                        literal(`(
+                            SELECT COUNT(*)
+                            FROM followmosques AS followMosques
+                            WHERE followMosques.mosque_id = Mosque.id
+                        )`),
+                        "followersCount",
+                    ],
+                    // ✅ 🛠️ FIXED HERE: Wrapped variable payload string within explicit single quotes to parse string UUID paths cleanly
+                    [
+                        literal(`(
+                            SELECT EXISTS(
+                                SELECT 1
+                                FROM followmosques AS followMosques
+                                WHERE followMosques.mosque_id = Mosque.id
+                                AND followMosques.user_id = '${userId || 0}'
+                            )
+                        )`),
+                        "isFollowing",
+                    ],
+                ],
+            },
+            include: [
+                {
+                    model: MosqueProfile,
+                    as: "mosqueProfile",
+                    attributes: ["image"],
+                },
+            ],
+        });
+
+        // 7. Dispatch normalized data payload directly to the frontend context screen engine
+        return res.status(201).json({
             status: 'success',
-           mosque: newMosque,
-            mosqueProfile: profileMosque.image
+            message: 'Your mosque profile draft has been processed inside our tracking records.',
+            mosque: fullyHydratedMosque
         });
     }
-    catch(err){ 
-       await transaction.rollback();
-        console.error(err.message);
-        next(new AppError(process.env.NODE_ENV === 'development' ? err.message : 'something went wrong', 500))
+    catch (err) { 
+        // Operational database tracking fallback guardrail execution path
+        if (transaction && transaction.finished !== 'commit' && transaction.finished !== 'rollback') {
+            await transaction.rollback();
+        }
+        
+        console.error("REGISTER MOSQUE CONTROLLER ERROR:", err.message);
+        return next(
+            new AppError(
+                process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong during mosque setup execution.', 
+                500
+            )
+        );
     }
 };
 
-export const getMosque = async(req, res, next) => {
-    try{
-        const mosques = await Mosque.findAll({include: {model: MosqueProfile, as: 'mosqueProfile', attributes: ['image']}});
+  
+
+export const getMosques = async (req, res, next) => {
+  try {
+    const search = req.query.search || "";
+    const state = req.query.state;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 10);
+    const offset = (page - 1) * limit;
+
+    const whereCondition = {};
+    if (search) whereCondition.name = { [Op.like]: `%${search}%` };
+    if (state) whereCondition.state = state;
+
+    const { rows: mosques, count } = await Mosque.findAndCountAll({
+      where: whereCondition,
+      attributes: {
+        include: [
+          [
+            literal(`(
+              SELECT COUNT(*)
+              FROM followmosques AS followMosques
+              WHERE followMosques.mosque_id = Mosque.id
+            )`),
+            "followersCount",
+          ],
+          // "isFollowing" subquery has been removed for a cleaner query
+        ],
+      },
+      include: [
+        {
+          model: MosqueProfile,
+          as: "mosqueProfile",
+          attributes: ["image"],
+        },
+      ],
+      limit: limit,
+      offset: offset,
+      order: [["createdAt", "DESC"]],
+      distinct: true,
+    });
+
+    return res.status(200).json({
+      status: "success",
+      total: count,
+      totalPages: Math.ceil(count / limit),
+      mosques,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+
+export const getMosque = async (req, res, next) => {
+  try {
+    // 1. Get ID from URL params (/api/mosques/:id)
+    const { id } = req.params;
+
+    // 2. Identify the logged-in user
+    const loggedInUserId = req.user ? req.user.id : null;
+
+    // 3. Find the specific mosque with all the logic you built
+    const mosque = await Mosque.findByPk(id, {
+      attributes: {
+        include: [
+          // 📊 1. Total Followers Count
+          [
+            literal(`(
+              SELECT COUNT(*)
+              FROM followmosques AS followMosques
+              WHERE followMosques.mosque_id = Mosque.id
+            )`),
+            "followersCount",
+          ],
+          // ✅ 2. Status Check: Is this specific user following?
+          [
+            literal(`(
+              SELECT EXISTS(
+                SELECT 1
+                FROM followmosques AS followMosques
+                WHERE followMosques.mosque_id = Mosque.id
+                AND followMosques.user_id = ${loggedInUserId || 0}
+              )
+            )`),
+            "isFollowing",
+          ],
+        ],
+      },
+      include: [
+        {
+          model: MosqueProfile,
+          as: "mosqueProfile",
+          // On a profile page, you might want more than just the image
+          // attributes: ["image", "description", "announcements"], 
+        },
+      ],
+    });
+
+    // 4. Handle 404 if mosque doesn't exist
+    if (!mosque) {
+      return next(new AppError("No mosque found with that ID", 404));
+    }
+
+    // 5. Success Response
+    return res.status(200).json({
+      status: "success",
+      message: "Mosque details fetched successfully",
+      data: { mosque },
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+
+export const getUserFollowedMosques = async (req, res, next) => {
+  try {
+    // 🛡️ Guard Clause: Fail immediately if auth middleware missed populating req.user
+    if (!req.user || !req.user.id) {
+      return next(new AppError("You must be authenticated to fetch followed mosques.", 401));
+    }
+
+    // 1. Direct variable assignments for easy debugging logs
+    const userId = req.user.id; 
+    console.log(">>>>>>>> DEBUGGING: Fetching mosques followed by User ID:", userId);
+
+    // 2. Find all mosques that this specific user follows
+    const followedMosques = await Mosque.findAll({
+      include: [
+        {
+          model: FollowMosque,
+          as: "followers", // Must exactly match your Sequelize relationship alias
+          where: { userId: userId }, // 🔥 FIXED: No longer undefined!
+          attributes: [], // Keeps the output clean of follow-join table clutter
+        },
+        {
+          model: MosqueProfile,
+          as: "mosqueProfile",
+          attributes: ["image"],
+        },
+      ],
+      attributes: {
+        include: [
+          // 📊 Count total followers for each mosque globally
+          [
+            literal(`(
+              SELECT COUNT(*)
+              FROM followmosques AS followMosques
+              WHERE followMosques.mosque_id = Mosque.id
+            )`),
+            "followersCount",
+          ],
+          // ✅ Is this specific requesting user following this mosque? (Will be true here)
+          [
+            literal(`(
+              SELECT EXISTS(
+                SELECT 1
+                FROM followmosques AS followMosques
+                WHERE followMosques.mosque_id = Mosque.id
+                AND followMosques.user_id = '${userId}'
+              )
+            )`),
+            "isFollowing",
+          ],
+        ],
+      },
+      order: [["createdAt", "DESC"]],
+    });
+
+    console.log(`>>>>>>>> DEBUGGING: Successfully found ${followedMosques.length} mosques.`);
+
+    // 3. Return the response payload
+    return res.status(200).json({
+      status: "success",
+      message: "Followed mosques retrieved successfully",
+      results: followedMosques.length,
+      mosques: followedMosques
+    });
+
+  } catch (err) { 
+    console.error(">>>>>>>> CRITICAL ERROR IN getUserFollowedMosques:", err);
+    
+    // Fix: Moved your custom AppError to fire BEFORE your catch block tries to hit next(err) twice
+    return next(
+      new AppError(
+        process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong while fetching followed mosques', 
+        500
+      )
+    );
+  }
+};
+
+// get mosques data counts 
+export const getMosqueCounts = async (req, res, next) => {
+    try {
+        // Parallel execution for database efficiency
+        const [totalVerifiedMosques, totalPendingMosques] = await Promise.all([
+            Mosque.count({ where: { status: 'verified' } }),
+            Mosque.count({ where: { status: 'pending' } })
+        ]);
+
+        // Use 200 for successful data retrieval
+        return res.status(200).json({
+            status: 'success',
+            mosquesCounts: {
+                totalVerifiedMosques,
+                totalPendingMosques
+            }
+        });
+    } catch (err) {
+        // Detailed logging for debugging
+        if (process.env.NODE_ENV === 'development') {
+            console.error(err);
+        }
+
+        return next(new AppError(
+            process.env.NODE_ENV === 'development' 
+                ? err.message 
+                : 'Something went wrong during the mosque lookup process.',
+            500
+        ));
+    }
+};
+
+export const getPendingMosques = async(req, res, next) => {
+
+  try{
+
+      const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 10);
+    console.log('page, limit', page, limit)
+    const offset = (page - 1) * limit;
+
+
+    const pendingMosques = await Mosque.findAndCountAll({
+      where: {status: 'pending'},
+      include: {
+        model: MosqueAdmin, as: 'mosquAdmin',
+        include: {
+          model: User, as: 'user',
+          attributes: ['firstName', 'surName', 'email']
+        }
+      },
+       limit: limit,
+      offset: offset,
+      order: [["createdAt", "ASC"]],
+      distinct: true,
+    })
+
+    res.status(201).json({
+      status: 'success',
+      pendingMosques: pendingMosques.rows,
+      totalCounts: pendingMosques.count
+    });
+  }
+     catch(err){
+        console.error(err.message);
+        next(new AppError(process.env.NODE_ENV === 'development' 
+                ? err.message 
+                : 'Something went wrong during the pending mosque lookup process.'))
+    }
+};
+
+export const verifiedMosque = async (req, res, next) => {
+    try {
+        const { mosqueId } = req.params;
+        
+        const existingMosque = await Mosque.findOne({ where: { id: mosqueId, status: 'pending' } });
+        
+        // Added 'return' to stop execution if not found
+        if (!existingMosque) {
+            return next(new AppError('No mosque found with this ID', 404)); 
+        }
+
+        existingMosque.status = 'verified';
+        
+        // Added 'await' to ensure the database update finishes
+        await existingMosque.save(); 
+
         res.status(200).json({
             status: 'success',
-            message: 'mosque fetched successfully',
-            mosques
+            message: `Mosque ${existingMosque.name} has been verified successfully`
         });
+    } catch (err) {
+        if (process.env.NODE_ENV === 'development') {
+            console.error(err);
+        }
+        
+        next(new AppError(
+            process.env.NODE_ENV === 'development' 
+                ? err.message 
+                : 'Something went wrong during the mosque verification process.',
+            500
+        ));
     }
-    catch(err){
-        process.env.NODE_ENV === 'develpment' 
-            ? err.message : 'something went wrong'
-    }
+};
+
+
+export const getFollowedMosqueIds = async (req, res, next) => {
+  try {
+
+    const userId = req.user.id;
+
+    // 2. Fetch only the mosque_ids for this user from the join table
+    const followedIds = await FollowMosque.findAll({
+      where: { userId },
+      attributes: ["mosqueId"], // Only fetch the ID column
+    });
+
+    // 3. Map to a clean array of strings/numbers: [id1, id2, id3]
+    const ids = followedIds.map((item) => String(item.mosqueId));
+
+    // 4. Return the clean array
+    return res.status(200).json({
+      status: "success",
+      followedMosqueIds: ids,
+    });
+  } catch (err) {
+    console.error("ERROR IN getFollowedMosqueIds:", err);
+    return next(new AppError("Something went wrong while fetching your follow list.", 500));
+  }
 };

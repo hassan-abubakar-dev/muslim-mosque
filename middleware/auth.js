@@ -3,31 +3,66 @@ import User from '../models/user.js';
 import AppError from '../utils/AppError.js';
 
 // Protect routes
-export const protect = async (req, res, next) => {
-    let token;
+export const protectRoutes = async (req, res, next) => { 
+    try {
+        const authHeader = req.headers.authorization;
 
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-        try {
-            // Get token from header
-            token = req.headers.authorization.split(' ')[1];
-
-            // Verify token
-            const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_KEY);
-
-            // Get user from the token
-            req.user = await User.findByPk(decoded.id, {
-                attributes: { exclude: ['password'] }
-            });
-
-            next();
-        } catch (error) {
-            console.error(error);
-            return next(new AppError('Not authorized to access this route', 401));
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return next(new AppError('Not logged in or invalid token', 401));
         }
-    }
 
-    if (!token) {
-        return next(new AppError('Not authorized, no token', 401));
+        const token = authHeader.split(' ')[1].trim();
+
+        // 1. Verify token signature
+        const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_KEY);
+
+        // 2. 🛡️ Live Security Check: Verify the user still exists in the database
+        const currentUser = await User.findByPk(decoded.id);
+        if (!currentUser) {
+            return next(new AppError('The user belonging to this token no longer exists.', 401));
+        }
+
+        
+        req.user = currentUser; 
+        
+        next();
+    } catch (err) {
+        if (err.name === 'TokenExpiredError') {
+            return next(new AppError('Token expired', 401));
+        }
+        return next(new AppError('Invalid token', 401));
+    }
+};
+
+
+
+export const optionalAuth = async (req, res, next) => {
+    try {
+        const authHeader = req.headers.authorization;
+
+        // If no token is provided, just move to the next function as a "Guest"
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return next();
+        }
+
+        const token = authHeader.split(' ')[1].trim();
+
+        // 1. Verify token signature
+        const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_KEY);
+
+        // 2. Live Security Check: Verify the user still exists
+        // If the token is valid but the user was deleted, we treat them as a guest
+        const currentUser = await User.findByPk(decoded.id);
+        
+        if (currentUser) {
+            req.user = currentUser;
+        }
+        
+        next();
+    } catch (err) {
+        // If token is expired or invalid, simply proceed as a guest.
+        // Do NOT call next(new AppError(...)) here, or it will block the request.
+        next();
     }
 };
 

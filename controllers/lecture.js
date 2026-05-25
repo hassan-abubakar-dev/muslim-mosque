@@ -1,110 +1,235 @@
-import { PutObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { r2Client } from "../config/r2Client.js";
-import Lecture from "../models/Lecture.js"; 
-import Mosque from "../models/Mosque.js";
+import Lecture from "../models/lecture.js";
+import Category from "../models/category.js";
 import AppError from "../utils/AppError.js";
+import { deleteFileFromR2 } from "../utils/r2.js";
+import dotenv from "dotenv";
+import Notification from "../models/Notification.js";
+import Bookmark from "../models/bookmark.js";
+
+dotenv.config();
 
 
-// 1️⃣ Generate presigned PUT URL for lecture upload
-export const generateLectureUploadUrl = async (req, res, next) => {
-  try {
-    const { fileName, fileType, type, mosqueId } = req.body;
-
-    // Validate type
-    if (!["audio", "video"].includes(type)) {
-      return next(new AppError('Invalid lecture type. Must be "audio" or "video".', 400));
-    }
-
-    // Validate mosque exists (optional)
-    const {categoryId} = req.params;
-    if (!categoryId){
-        next(new AppError('category id is required', 400));
-    }
-
-    // Generate unique key for R2
-    const key = `lectures/${type}/${Date.now()}-${fileName}`;
-
-    // Generate presigned PUT URL (expires in 1 hour)
-    const command = new PutObjectCommand({
-      Bucket: process.env.R2_BUCKET,
-      Key: key,
-      ContentType: fileType,
-    });
-
-    const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });
-
-    res.status(200).json({ uploadUrl, key });
-  } catch (err) {
-    console.error(err);
-    next(new AppError("Failed to generate upload URL", 500));
-  }
-};
-
-// 2️⃣ Save lecture metadata after successful upload
+// Save lecture metadata to database
 export const saveLectureMetadata = async (req, res, next) => {
   try {
-    const { title, type, key, duration } = req.body;
-    const {categoryId} = req.params;
-    if(!categoryId){    
-        return next(new AppError('category id is required', 400));
-    };
+    const { categoryId } = req.params;
+    const { title, type, key, duration, url, thumbnail, videoId, mosqueId } = req.body;
+    console.log(mosqueId, 'lecture controller mosque id')
 
-    if (!title || !key || !type || !duration) {
-      return next(new AppError("Missing required fields", 400));
+    // 1. Basic Category Check
+    if (!categoryId) {
+      return next(new AppError("Category ID is required", 400));
     }
 
-    const lecture = await Lecture.create({
-      title,
-      type,
-      fileKey: key,
-      duration,
-      categoryId
+    // 2. Title is required for both audio and video
+    if (!title) {
+      return next(new AppError("Title is required", 400));
+    }
+
+  if (!mosqueId) {
+  return next(new AppError("Mosque ID is required for notification distribution", 400));
+}
+
+    // Verify category exists
+    const category = await Category.findByPk(categoryId);
+    if (!category) {
+      return next(new AppError("Category not found", 404));
+    }
+
+    // Declare the lecture variable outside the blocks so the response can see it
+    let lecture;
+
+    // 3. Conditional validation and creation based on Type/Key
+    if (type === "audio" || key) {
+      // Audio specific validation
+      if (!key) {
+        return next(new AppError("Audio file key is required", 400));
+      }
+
+      // Build full public URL from R2
+      const fileUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
+
+      lecture = await Lecture.create({
+        title,
+        type: "audio",
+        url: fileUrl,   // full URL for frontend
+        publicId: key,  // store key for deletion
+        duration,       // Audio retains duration tracking
+        categoryId,
+      });
+
+    } else if (type === "video" || videoId) {
+      // Video specific validation
+      if (!videoId) {
+        return next(new AppError("YouTube Video ID is required", 400));
+      }
+
+      // We don't need duration anymore for video! (As per your great decision)
+      lecture = await Lecture.create({
+        title,  
+        type: "video",
+        thumbnail, // YouTube mqdefault shortcut path sent from frontend
+        videoId,   
+        categoryId,
+      });
+      
+    } else {
+      return next(new AppError("Invalid lecture type specified", 400));
+    }
+
+    try {
+      await Notification.create({
+        mosqueId,
+        message: `New lecture added: ${lecture.title}`,
+        type: 'lecture',
+        lectureId: lecture.id
+      });
+    }
+    catch (error) {
+      console.error("Error creating notification:", error);
+    }
+
+    // Now this block successfully accesses the 'lecture' variable!
+    res.status(201).json({
+      success: true,
+      message: "Lecture saved successfully",
+      lecture,
     });
 
-    res.json({ message: "Lecture saved", lecture });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Failed to save lecture metadata" });
+    console.error("Error saving lecture metadata:", err);  
+
+    next(
+      new AppError(
+        process.env.NODE_ENV === "development"
+          ? err.message
+          : "Failed to save lecture metadata",
+        500
+      )
+    )
   }
 };
 
-// 3️⃣ Generate signed GET URL for playback
-export const getLecturePlaybackUrl = async (req, res, next) => {
+
+
+export const deleteLecture = async (req, res, next) => {
   try {
-    const lectureId = req.params.id;
+    const id = req.params.lectureId;
 
-    const lecture = await Lecture.findByPk(lectureId);
-    if (!lecture) return res.status(404).json({ message: "Lecture not found" });
+    if (!id) {
+      return next(new AppError("Lecture id is required", 400));
+    }
 
-    // Optional: check user access (mosque, premium)
-    // Example: if (lecture.isPremium && !req.user.isPremium) return res.status(403).json({message: 'Access denied'})
+    const lecture = await Lecture.findByPk(id);
 
-    const command = new GetObjectCommand({
-      Bucket: process.env.R2_BUCKET,
-      Key: lecture.fileKey,
+    if (!lecture) {
+      return next(new AppError("Lecture not found", 404));
+    }
+
+    // 🔥 delete file from R2 (if exists)
+    if (lecture.publicId) {
+      try {
+        await deleteFileFromR2(lecture.publicId);
+      } catch (error) {
+        return next(
+          new AppError(
+            process.env.NODE_ENV === "development"
+              ? error.message
+              : "Failed to delete lecture file from storage",
+            500
+          )
+        );
+      }
+    }
+
+    // ✅ delete lecture record
+    await lecture.destroy();
+
+    res.status(200).json({
+      success: true,
+      message: "Lecture deleted successfully",
     });
 
-    const signedUrl = await getSignedUrl(r2Client, command, { expiresIn: 7200 }); // 2 hours
-    res.json({ signedUrl });
   } catch (err) {
-    console.error(err);
-    next(new AppError(err.message, 500))
+    console.error("Delete lecture error:", err.message);
+
+    next(
+      new AppError(
+        process.env.NODE_ENV === "development"
+          ? err.message
+          : "Something went wrong",
+        500
+      )
+    );
   }
 };
 
-export const getAllLectures = async (req, res, next) => {
+
+export const getLectures = async (req, res, next) => {
   try {
-    const {categoryId} = req.params; // or categoryId if needed
-    const lectures = await Lecture.findAll({
-      where: { categoryId }, // adjust to your schema
-      order: [['createdAt', 'DESC']] // newest first
+    const { categoryId } = req.params;
+
+    if (!categoryId) {
+      return next(new AppError("Category ID is required", 400));
+    }
+
+    // ✅ check category exists
+    const category = await Category.findByPk(categoryId);
+    if (!category) {
+      return next(new AppError("Category not found", 404));
+    }
+
+    let { userId, page = 1, limit = 10 } = req.query;
+
+    page = parseInt(page);
+    limit = parseInt(limit);
+
+    if (isNaN(page) || page < 1) page = 1;
+    if (isNaN(limit) || limit < 1) limit = 10;
+
+    const offset = (page - 1) * limit;
+
+    // 🔥 FORCE THE ASSOCIATION RIGHT HERE:
+    if (!Lecture.associations || !Lecture.associations.bookmarks) {
+      Lecture.hasMany(Bookmark, { foreignKey: 'lectureId', as: 'bookmarks', onDelete: 'CASCADE' });
+      Bookmark.belongsTo(Lecture, { foreignKey: 'lectureId', as: 'lecture' });
+    }
+
+    // 🚀 Fetch data with raw bookmarks array included
+    const { rows: lectures, count } = await Lecture.findAndCountAll({
+      where: { categoryId },
+      distinct: true, 
+      include: {
+        model: Bookmark,
+        as: 'bookmarks',
+        where: userId ? { userId } : undefined,
+        required: false, 
+      },
+      limit,
+      offset,
+      order: [["createdAt", "DESC"]], 
     });
 
-    // Return metadata only, no signed URL yet
-    res.status(200).json({ lectures });
+    const totalPages = Math.ceil(count / limit);
+
+    // 💎 Sent exactly as-is without boolean conversion
+    res.status(200).json({
+      success: true,
+      message: "Lectures fetched successfully",
+      currentPage: page,
+      totalPages,
+      totalItems: count,
+      pageSize: limit,
+      lectures, // 👈 Look inside this array in your Postman response!
+    });
+
   } catch (err) {
-    console.error(err);
-     next(new AppError(err.message, 500))
+    console.error("Get lectures error:", err.message);
+    next(
+      new AppError(
+        process.env.NODE_ENV === "development" ? err.message : "Failed to fetch lectures",
+        500
+      )
+    );
   }
 };

@@ -31,13 +31,18 @@ const User = dbConnection.define('User', {
         allowNull: false
     },
     role: {
-        type: DataTypes.ENUM('user', 'admin', 'superAdmin', 'agent'),
+        type: DataTypes.ENUM('user', 'superAdmin', 'agent'),
         defaultValue: 'user'
     },
     isVerify: {
         type: DataTypes.BOOLEAN,
         defaultValue: false
-    }
+    },
+lastNotificationCheck: { // to check for new notifications since last check
+  type: DataTypes.DATE,
+  defaultValue: DataTypes.NOW, // Sets the time of account creation initially
+  allowNull: false
+}
 },
     {
         tableName: 'users',
