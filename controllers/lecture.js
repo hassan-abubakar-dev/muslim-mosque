@@ -1,10 +1,11 @@
-import Lecture from "../models/lecture.js";
-import Category from "../models/category.js";
+// import Lecture from "../models/lecture.js";
+// import Category from "../models/category.js";
 import AppError from "../utils/AppError.js";
 import { deleteFileFromR2 } from "../utils/r2.js";
 import dotenv from "dotenv";
-import Notification from "../models/Notification.js";
-import Bookmark from "../models/bookmark.js";
+// import Notification from "../models/Notification.js";
+// import Bookmark from "../models/bookmark.js";
+import { Lecture, Category, Notification, Bookmark } from "../models/relationship.js";
 import { Op } from "sequelize";
 
 dotenv.config();
@@ -166,7 +167,6 @@ export const deleteLecture = async (req, res, next) => {
 };
 
 
-
 export const getLectures = async (req, res, next) => {
   try {
     const { categoryId } = req.params;
@@ -175,33 +175,32 @@ export const getLectures = async (req, res, next) => {
     const category = await Category.findByPk(categoryId);
     if (!category) return next(new AppError("Category not found", 404));
 
-    // Added 'search' to destructuring
-    let { userId, page = 1, limit = 10, search } = req.query;
+    // 1. Added 'type' to destructuring
+    let { userId, page = 1, limit = 10, search, type } = req.query;
 
     page = parseInt(page);
     limit = parseInt(limit);
     if (isNaN(page) || page < 1) page = 1;
-    if (isNaN(limit) || limit < 1) limit = 10;
+    if (isNaN(limit) || limit < 1) limit = 10; // Fixed from 2 back to 10
     const offset = (page - 1) * limit;
 
-    // Build the WHERE clause
+    // 2. Build the WHERE clause
     const whereClause = { categoryId };
     
-    // Add Search logic using 'like' for MySQL
+    // Add Search logic
     if (search && search.trim() !== "") {
       whereClause.title = {
         [Op.like]: `%${search}%` 
       };
     }
 
-    // Association check
-    if (!Lecture.associations.bookmarks) {
-      Lecture.hasMany(Bookmark, { foreignKey: 'lectureId', as: 'bookmarks', onDelete: 'CASCADE' });
-      Bookmark.belongsTo(Lecture, { foreignKey: 'lectureId', as: 'lecture' });
+    // 3. Add Type logic (video or audio)
+    if (type && (type === 'video' || type === 'audio')) {
+      whereClause.type = type;
     }
 
     const { rows: lectures, count } = await Lecture.findAndCountAll({
-      where: whereClause, // 👈 Applied here
+      where: whereClause, 
       distinct: true, 
       include: {
         model: Bookmark,
@@ -225,4 +224,27 @@ export const getLectures = async (req, res, next) => {
   } catch (err) {
     next(new AppError(err.message, 500));
   }
+};
+
+export const getLectureCount = async (req, res, next) => {
+    try {
+        const { categoryId } = req.params;
+        
+        if (!categoryId) {
+            return next(new AppError('category id is required', 400));
+        }
+
+        // Count only where categoryId matches
+        const count = await Lecture.count({ 
+            where: { categoryId } 
+        });
+
+        res.status(200).json({
+            success: true,
+            count
+        });
+    } catch (err) {
+        console.error('Error fetching lecture count:', err.message);
+        next(new AppError(process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong', 500));
+    }
 };

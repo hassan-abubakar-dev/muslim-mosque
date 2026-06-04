@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 import { Op } from "sequelize";
 import {Category, CategoryProfile} from '../models/relationship.js'
 import { deleteFileFromR2 } from "../utils/r2.js"; 
+
+
 dotenv.config();
 
 
@@ -87,31 +89,6 @@ export const createCategory = async (req, res, next) => {
 };
 
 
-export const getAllCategories = async (req, res, next) => {
-    try {
-        const { mosqueId } = req.params
-        if (!mosqueId) {
-            return next(new AppError('mosque id is required'));
-        }
-        const categories = await Category.findAll({
-            where: { mosqueId },
-            include: {
-                model: CategoryProfile, as: 'categoryProfile',
-                attributes: ['image']
-            },
-            order: [['createdAt', 'DESC']]
-        });
-
-
-        res.status(200).json({
-            success: true,
-            categories
-        });
-    } catch (err) {
-        console.error(err.message);
-        next(new AppError(process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong', 500));
-    }
-};
 
 
 
@@ -292,3 +269,33 @@ export const deleteCategory = async (req, res, next) => {
     );
   }
 };
+
+
+
+export const getAllCategories = async (req, res, next) => {
+    try {
+        const { mosqueId } = req.params;
+        if (!mosqueId) {
+            return next(new AppError('mosque id is required', 400));
+        }
+
+        const categories = await Category.findAll({
+            where: { mosqueId },
+            include: {
+                model: CategoryProfile, 
+                as: 'categoryProfile',
+                attributes: ['image']
+            },
+            order: [['createdAt', 'DESC']]
+        });
+
+        res.status(200).json({
+            success: true,
+            categories
+        });
+    } catch (err) {
+        console.error(err.message);
+        next(new AppError(process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong', 500));
+    }
+};
+
