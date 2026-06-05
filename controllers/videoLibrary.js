@@ -1,40 +1,81 @@
 // 📄 controllers/videoLibrary.js
-import { VideoLibrary, Lecture } from '../models/relationship.js';
+import { VideoLibrary, Lecture, Category, Mosque } from '../models/relationship.js';
+import { Op } from 'sequelize';
+import AppError from '../utils/AppError.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 /**
  * @desc    Get all saved videos for the logged-in user's library
  * @route   GET /api/video-library/get-library
  */
-export const getVideoLibrary = async (req, res) => {
-  try {
-    const  userId  = req.user.id; // Provided by your auth middleware
 
-    const libraryItems = await VideoLibrary.findAll({
+
+export const getVideoLibrary = async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    
+    // 1. Setup Pagination and Search params
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+    const searchTerm = req.query.search || "";
+
+    // 2. Define filter for the Lecture title
+    const lectureWhere = { type: 'video' };
+    if (searchTerm) {
+      lectureWhere.title = { [Op.like]: `%${searchTerm}%` };
+    }
+
+    // 3. Find and Count for Pagination metadata
+    const { count, rows: libraryItems } = await VideoLibrary.findAndCountAll({
       where: { userId },
+      limit,
+      offset,
       include: [
         {
           model: Lecture,
           as: 'lectureLibrary',
-          where: { type: 'video' } // 👈 Inner filter ensures we ONLY grab video documents
+          where: lectureWhere,
+          include: [{
+            model: Category,
+            as: 'category',
+            attributes: ['id'],
+            include: [{
+              model: Mosque,
+              as: 'mosqueCategory',
+              attributes: ['name']
+            }]
+          }]
         }
       ],
-      order: [['createdAt', 'DESC']] // Show most recently saved videos first
+      order: [['createdAt', 'DESC']]
+    });
+
+    // 4. Format the result
+    const formattedLibrary = libraryItems.map(item => {
+      const lec = item.lectureLibrary.toJSON();
+      const { category, ...cleanLec } = lec; 
+      return {
+        ...cleanLec,
+        addedToLibraryAt: item.createdAt,
+        mosqueName: lec.category?.mosqueCategory?.name || "General Lecture"
+      };
     });
 
     return res.status(200).json({
-      status: 'success',  
-      results: libraryItems.length,
-      library: libraryItems
+      status: 'success',
+      totalResults: count,
+      totalPages: Math.ceil(count / limit),
+      currentPage: page,
+      library: formattedLibrary
     });
   } catch (err) {
-    console.error("Error inside getVideoLibrary controller:", err.message);
-    return res.status(500).json({
-      status: 'error',
-      message: "Failed to retrieve video library details.",
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    console.error("Error in getVideoLibrary:", err.message);
+    return next(new AppError(process.env.NODE_ENV === 'development' ? err.message : "Failed to retrieve video library.", 500));
   }
-};
+};;
 
 /**
  * @desc    Save or Remove a video from the user's library (Toggle system)
@@ -44,7 +85,7 @@ export const getVideoLibrary = async (req, res) => {
  * @desc    Save or Refresh a video in the user's library (Bring-to-top system)
  * @route   POST /api/video-library/toggle-save/:lectureId
  */
-export const toggleVideoLibrary = async (req, res) => {
+export const toggleVideoLibrary = async (req, res, next) => {
   try {
     const userId = req.user.id; // Provided by your auth middleware
     const { lectureId } = req.params; 
@@ -88,11 +129,7 @@ export const toggleVideoLibrary = async (req, res) => {
 
   } catch (err) {
     console.error("Error inside toggleVideoLibrary controller:", err.message);
-    return res.status(500).json({
-      status: 'error',
-      message: "Failed to process video library request.",
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    return next(new AppError(process.env.NODE_ENV === 'development' ? err.message : "Failed to process video library request.", 500));
   }
 };
 
@@ -100,7 +137,7 @@ export const toggleVideoLibrary = async (req, res) => {
  * @desc    Explicitly remove a video from the user's library (Called from Library Dashboard)
  * @route   DELETE /api/video-library/remove/:lectureId
  */
-export const removeFromLibrary = async (req, res) => {
+export const removeFromLibrary = async (req, res, next) => {
   try {
     const userId = req.user.id; 
     const { lectureId } = req.params;
@@ -131,10 +168,6 @@ export const removeFromLibrary = async (req, res) => {
     });
   } catch (err) {
     console.error("Error inside removeFromLibrary controller:", err.message);
-    return res.status(500).json({
-      status: 'error',
-      message: "Failed to remove item from library.",
-      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-    });
+    return next(new AppError(process.env.NODE_ENV === 'development' ? err.message : "Failed to remove item from library.", 500));
   }
 };

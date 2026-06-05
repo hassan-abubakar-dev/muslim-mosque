@@ -87,62 +87,53 @@ export const getUnreadNotificationCount = async (req, res, next) => {
 export const getNotifications = async (req, res, next) => {
     try {
         const userId = req.user.id;
-        
-        // 1. Sanitize pagination values to prevent SQL/Sequelize injection quirks
         let { page = 1, limit = 15 } = req.query;
         page = parseInt(page);
         limit = parseInt(limit);
-         
         if (isNaN(page) || page < 1) page = 1;
         if (isNaN(limit) || limit < 1) limit = 15;
-        
         const offset = (page - 1) * limit;
 
-        // Fix: corrected typo from console.loge to console.log
-        console.log('Fetching notifications for user:', userId);
-
-        // 2. Fetch the list of mosque IDs this user follows
+        // 1. Fetch mosque IDs AND the date the user followed them
         const followedMosques = await FollowMosque.findAll({
             where: { userId },
-            attributes: ['mosqueId']
+            attributes: ['mosqueId', 'createdAt'] // We need createdAt here
         });
-        const mosqueIds = followedMosques.map(f => f.mosqueId);
 
-        // 3. High-speed database query (Zero JOIN operations!)
+        if (followedMosques.length === 0) {
+            return res.status(200).json({ status: 'success', notifications: [], totalPages: 0 });
+        }
+
+        // 2. Build the dynamic filter using Op.or
+        // Logic: (mosqueId = A AND createdAt >= FollowDateA) OR (mosqueId = B AND createdAt >= FollowDateB)
+        const filter = followedMosques.map(f => ({
+            mosqueId: f.mosqueId,
+            createdAt: { [Op.gte]: f.createdAt }
+        }));
+
+        // 3. High-speed query with dynamic filtering
         const notifications = await Notification.findAndCountAll({
-            where: { mosqueId: { [Op.in]: mosqueIds } },
+            where: { [Op.or]: filter },
             limit,
             offset,
             order: [['createdAt', 'DESC']],
-            // 🔥 REMOVED: Heavy database joins dropped for extreme speed and Neon efficiency!
         });
 
-        // 4. Update the user's notification badge timestamp tracking
+        // 4. Update the user's check timestamp
         await User.update(
             { lastNotificationCheck: new Date() },
             { where: { id: userId } }
         );
 
-        const totalPages = Math.ceil(notifications.count / limit);
-
         res.status(200).json({
             status: 'success',
             currentPage: page,
-            totalPages,
+            totalPages: Math.ceil(notifications.count / limit),
             totalItems: notifications.count,
-            results: notifications.rows.length,
-             notifications: notifications.rows,
-             followedMosques
-        
+            notifications: notifications.rows,
         });
         
     } catch (err) {
-        console.error('Error fetching notifications:', err);
-        next(
-            new AppError(
-                process.env.NODE_ENV === 'development' ? err.message : 'Failed to fetch notifications',
-                500
-            )
-        );
+        next(new AppError(err.message, 500));
     }
 };
