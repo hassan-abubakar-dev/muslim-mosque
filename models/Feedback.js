@@ -32,7 +32,9 @@ const Feedback = dbConnection.define(
 
         "work_inquiry",
 
-        "praise"
+        "praise",
+
+        "general_feedback"
 
       ),
 
@@ -67,9 +69,7 @@ const Feedback = dbConnection.define(
 
 
     contactConsent: {
-
       type: DataTypes.BOOLEAN,
-
       defaultValue: false,
 
     },

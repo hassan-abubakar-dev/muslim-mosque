@@ -1,40 +1,41 @@
-// import {Feedback} from "../models/relationship.js";
-import Feedback from "../models/feedback.js";
+import {Feedback, User} from "../models/relationship.js";
+
 import AppError from "../utils/appError.js";   
 
 export const submitFeedback = async (req, res, next) => {
   try {
     const { type, message, email, contactConsent } = req.body;
 
-    // 1. Identify the user if they are logged in
-    // If your auth middleware sets req.user, we grab the ID
-    const userId = req.user ? req.user.id : null;
+    // 1. Safely handle optional user
+    const userId = req.user ? req.user.id : null; 
 
-    // 2. Logic: If logged in, we use the account email. 
-    // If guest, we use the email they typed in the optional box.
-    const finalEmail = req.user ? req.user.email : email;
+    // 2. Logic: Prioritize the email from req.body (in case the user updated it),
+    // then fallback to the profile email if they are logged in.
+    const finalEmail = email || (req.user ? req.user.email : null);
 
-    // 3. Create the database record
+    // 3. Validation
+    if (!message || message.trim().length === 0) {
+       return res.status(400).json({ status: "fail", message: "Message cannot be empty." });
+    }
+
+    // 4. Create record
     const newFeedback = await Feedback.create({
       type,
       message,
       email: finalEmail,
       contactConsent,
       userId,
-      status: "pending", // Default starting status
+      status: "pending",
     });
 
-    // 4. Response
     res.status(201).json({
       status: "success",
       message: "Feedback submitted successfully!",
-      data: {
-        feedback: newFeedback,
-      },
+      data: { feedback: newFeedback }
     });
   } catch (err) {
-    // Pass any errors (like validation errors) to your global error handler
-    next(err);
+    // Make sure AppError is defined in your scope
+    next(err); 
   }
 };
 
@@ -42,18 +43,24 @@ export const submitFeedback = async (req, res, next) => {
 
 export const getAllFeedbacks = async (req, res, next) => {
   try {
-    // 1. Get page and limit from query strings (e.g., /api/feedback?page=1&limit=10)
+    // 1. Get page and limit from query strings
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
+  
     const offset = (page - 1) * limit;
 
-    // 2. Fetch data and total count at once
+    // 2. Fetch data and total count
+    // Using include to fetch user details without heavy profile data
     const { count, rows } = await Feedback.findAndCountAll({
+      where: { status: 'pending' },
       limit,
       offset,
-      order: [["created_at", "DESC"]], // Show newest first
-      // Optional: You could include user details if userId is present
-      // include: [{ model: User, attributes: ['name', 'email'] }] 
+      order: [["created_at", "DESC"]], 
+      include: [{
+        model: User,
+        as: 'user', // Ensure this matches your relationship alias
+        attributes: ['id', 'firstName', 'surName', 'email', 'role']
+      }]
     });
 
     // 3. Send response with pagination metadata
@@ -63,50 +70,71 @@ export const getAllFeedbacks = async (req, res, next) => {
       totalItems: count,
       totalPages: Math.ceil(count / limit),
       currentPage: page,
-      data: { feedbacks: rows },
+      data: { 
+        feedbacks: rows 
+      },
     });
   } catch (err) {
-    next(err);
+    next(new AppError(err.message, 500));
   }
 };
 
 
 export const resolveFeedback = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const { adminNote } = req.body; // Optional: Store why/how you fixed it
+    try {
+        const { id } = req.params;
 
-    // 1. Find the feedback
-    const feedback = await Feedback.findByPk(id);
+        // 1. Find the feedback
+        const feedback = await Feedback.findByPk(id);
+        
+        if (!feedback) {
+            return res.status(404).json({ 
+                status: 'fail',
+                message: 'Feedback ticket not found.' 
+            });
+        }
 
-    if (!feedback) {
-      return next(new AppError("No feedback found with that ID", 404));
+        // 2. Update status
+        feedback.status = 'resolved';
+        await feedback.save();
+
+        // 3. Conditional Email Notification
+        // Only send if the user explicitly opted-in to contact and provided an email
+        if (feedback.contactConsent && feedback.email) {
+            const html = `
+                <h2>Feedback Resolved</h2>
+                <p>Dear User,</p>
+                <p>Thank you for sharing your feedback with us. We wanted to let you know that your submission regarding <strong>${feedback.type.replace('_', ' ')}</strong> has been reviewed and addressed.</p>
+                <p>Your input is invaluable in helping us improve our platform for the community.</p>
+                <br>
+                <p>Best regards,<br>Muslim Mosque Admin Team</p>
+            `;
+
+            try {
+                await sendEmail({
+                    to: feedback.email,
+                    subject: `Update: Your feedback has been resolved`,
+                    html,
+                });
+            } catch (emailErr) {
+                // Log email error but don't fail the entire request 
+                // since the resolution in the DB was successful
+                console.error("Feedback email notification failed:", emailErr.message);
+            }
+        }
+
+        // 4. Success response
+        return res.status(200).json({ 
+            status: 'success', 
+            message: 'Feedback marked as resolved.' 
+        });
+
+    } catch (err) { 
+        console.error("RESOLVE FEEDBACK ERROR:", err.message);
+        next(err);
     }
-
-    // 2. Check if already resolved to avoid redundant work
-    if (feedback.status === "resolved") {
-      return res.status(400).json({
-        status: "fail",
-        message: "This feedback is already resolved.",
-      });
-    }
-
-    // 3. Mark as resolved
-    feedback.status = "resolved";
-    // If you add an adminNote column to your schema later, you'd save it here
-    await feedback.save();
-
-    // 4. (Optional) Email Logic
-    // if (feedback.email && feedback.contactConsent) {
-    //    await sendEmail(feedback.email, "Your Masjiba feedback has been resolved!");
-    // }
-
-    res.status(200).json({
-      status: "success",
-      message: "Feedback marked as resolved successfully.",
-      data: { feedback },
-    });
-  } catch (err) {
-    next(err);
-  }
 };
+
+
+
+

@@ -169,17 +169,11 @@ export const getMosques = async (req, res, next) => {
 
 export const getMosque = async (req, res, next) => {
   try {
-    // 1. Get ID from URL params (/api/mosques/:id)
-    const { id } = req.params;
+    const { id } = req.params; // Expecting ID from the URL: /mosque/:id
 
-    // 2. Identify the logged-in user
-    const loggedInUserId = req.user ? req.user.id : null;
-
-    // 3. Find the specific mosque with all the logic you built
     const mosque = await Mosque.findByPk(id, {
       attributes: {
         include: [
-          // 📊 1. Total Followers Count
           [
             literal(`(
               SELECT COUNT(*)
@@ -188,43 +182,31 @@ export const getMosque = async (req, res, next) => {
             )`),
             "followersCount",
           ],
-          // ✅ 2. Status Check: Is this specific user following?
-          [
-            literal(`(
-              SELECT EXISTS(
-                SELECT 1
-                FROM followmosques AS followMosques
-                WHERE followMosques.mosque_id = Mosque.id
-                AND followMosques.user_id = ${loggedInUserId || 0}
-              )
-            )`),
-            "isFollowing",
-          ],
         ],
       },
       include: [
         {
           model: MosqueProfile,
-          as: "mosqueProfile",
-          // On a profile page, you might want more than just the image
-          // attributes: ["image", "description", "announcements"], 
+          as: "mosqueProfile"
         },
       ],
     });
 
-    // 4. Handle 404 if mosque doesn't exist
+    // Handle case where no mosque is found with the provided ID
     if (!mosque) {
-      return next(new AppError("No mosque found with that ID", 404));
+      return res.status(404).json({
+        status: "error",
+        message: "Mosque not found",
+      });
     }
 
-    // 5. Success Response
     return res.status(200).json({
       status: "success",
-      message: "Mosque details fetched successfully",
-      data: { mosque },
+        mosque
     });
   } catch (err) {
-    next(err);
+    next(new AppError( process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong during fetch mosque', 
+                500));
   }
 };
 
@@ -306,37 +288,6 @@ export const getUserFollowedMosques = async (req, res, next) => {
   }
 };
 
-// get mosques data counts 
-export const getMosqueCounts = async (req, res, next) => {
-    try {
-        // Parallel execution for database efficiency
-        const [totalVerifiedMosques, totalPendingMosques] = await Promise.all([
-            Mosque.count({ where: { status: 'verified' } }),
-            Mosque.count({ where: { status: 'pending' } })
-        ]);
-
-        // Use 200 for successful data retrieval
-        return res.status(200).json({
-            status: 'success',
-            mosquesCounts: {
-                totalVerifiedMosques,
-                totalPendingMosques
-            }
-        });
-    } catch (err) {
-        // Detailed logging for debugging
-        if (process.env.NODE_ENV === 'development') {
-            console.error(err);
-        }
-
-        return next(new AppError(
-            process.env.NODE_ENV === 'development' 
-                ? err.message 
-                : 'Something went wrong during the mosque lookup process.',
-            500
-        ));
-    }
-};
 
 export const getPendingMosques = async(req, res, next) => {
 

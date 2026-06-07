@@ -27,13 +27,14 @@ export const createAnnouncement = async (req, res, next) => {
         };
 
         const newAnnouncement = await Announcement.create(announcementData);
-
+    
+ 
          try {
-              await Notification.create({
+             notification = await Notification.create({
                 mosqueId,
                 message: `New announcement added: ${title}`,
-                type: 'lecture',
-                lectureId: lecture.id
+                type: 'announcement',
+                announcementId: newAnnouncement.id
               });
             }
             catch (error) {
@@ -96,34 +97,36 @@ export const deleteAnnouncement = async (req, res, next) => {
 export const getAnnouncements = async (req, res, next) => {
     try {
         const { mosqueId } = req.params;
+        // Parse page and limit from query string, defaults to page 1, 10 items per page
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const offset = (page - 1) * limit;
 
-        // Verify mosque
+        // Verify mosque exists
         const mosque = await Mosque.findByPk(mosqueId);
         if (!mosque) {
             return next(new AppError('Mosque not found', 404));
         }
 
-        // Fetch announcements sorted by newest first
-        const announcements = await Announcement.findAll({
-            where: {  mosqueId, isActive: true },
-            order: [['created_at', 'DESC']],
-            
+        // Use findAndCountAll to get both the rows and the total count for the frontend
+        const { count, rows } = await Announcement.findAndCountAll({
+            where: { mosqueId, isActive: true },
+            order: [['created_at', 'DESC']], // Newest first
+            limit: limit,
+            offset: offset
         });
-
-       
-
-        const cappedAnnouncements = announcements.slice(0, 5);
 
         res.status(200).json({
             status: 'success',
-            results: cappedAnnouncements.length,
-            // Inform frontend how many actually exist in DB for your manual review notice
-            totalInDb: announcements.length, 
-            announcements: cappedAnnouncements 
+            results: rows.length,
+            totalItems: count, // Total records in DB matching the filter
+            totalPages: Math.ceil(count / limit),
+            currentPage: page,
+            announcements: rows
         });
 
     } catch (err) {
-        console.error('get announcement error', err)
-        next(isDev ? err.message : 'fail to get announcements', 500);
+        console.error('get announcement error', err);
+        next(new AppError(isDev ? err.message : 'Failed to get announcements', 500));
     }
 };

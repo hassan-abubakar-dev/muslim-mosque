@@ -12,6 +12,7 @@ import Notification from "./notification.js";
 import Bookmark from './bookmark.js';
 import Report from "./report.js";
 import VideoLibrary from "./videoLibrary.js";
+import Feedback from "./feedback.js";
 
 // user and profile
 User.hasOne(UserProfile, {
@@ -180,11 +181,25 @@ Bookmark.belongsTo(Lecture, { foreignKey: 'lectureId', as: 'lecture' }); // 👈
 
 // report
 // Report Relationships
-User.hasMany(Report, { foreignKey: 'reporterId', onDelete: 'CASCADE' });
+User.hasMany(Report, { foreignKey: 'reporterId', as: 'reports' });
 Report.belongsTo(User, { foreignKey: 'reporterId', as: 'reporter' });
 
 Mosque.hasMany(Report, { foreignKey: 'mosqueId', onDelete: 'CASCADE' });
 Report.belongsTo(Mosque, { foreignKey: 'mosqueId' });
+
+
+// Define the Relationships
+// A User can have many Feedbacks
+User.hasMany(Feedback, {
+  foreignKey: 'userId',
+  as: 'feedbacks' // Optional alias
+});
+
+// A Feedback belongs to one User
+Feedback.belongsTo(User, {
+  foreignKey: 'userId',
+  as: 'user' // This is what you will use in your 'include' query
+});
 
 User.hasMany(VideoLibrary, { foreignKey: 'userId', as: 'libraryItems' });
 VideoLibrary.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -208,5 +223,6 @@ export {
   Notification, 
   Bookmark, 
   Report, 
+  Feedback,
   VideoLibrary
 };

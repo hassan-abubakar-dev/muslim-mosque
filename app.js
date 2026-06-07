@@ -25,6 +25,7 @@ import bookmarkRouter from './routes/bookmark.js';
 import videoLibraryRouter from './routes/videoLibrary.js';
 import mosqueAdminRouter from './routes/mosqueAdmin.js';
 import reportRouter from './routes/report.js'
+import superAdminRouter from './routes/superAdmin.js';
 
 dotenv.config();
 
@@ -56,6 +57,7 @@ app.use('/api/bookmarks', bookmarkRouter);
 app.use('/api/video-library', videoLibraryRouter);
 app.use('/api/mosque-admin', mosqueAdminRouter);
 app.use('/api/reports', reportRouter);
+app.use('/api/super-admin', superAdminRouter);
 // Error Handling Middleware
 app.use(errorHandler); 
 

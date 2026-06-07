@@ -7,37 +7,33 @@ const Report = db.define('Report', {
         defaultValue: DataTypes.UUIDV4,
         primaryKey: true,
     },
+    // ID Linkage for Admin Dashboard
+    mosqueId: {
+        type: DataTypes.UUID,
+        allowNull: false
+    },
+    reporterId: {
+        type: DataTypes.UUID,
+        allowNull: false
+    },
+    // Snapshots remain for historical audit
     targetMosqueName: {
         type: DataTypes.STRING(255),
-        allowNull: false,
-        validate: {
-            notEmpty: true
-        }
+        allowNull: false
     },
     reporterName: {
         type: DataTypes.STRING(100),
-        allowNull: false,
-        validate: {
-            notEmpty: true
-        }
+        allowNull: false
     },
     reporterEmail: {
         type: DataTypes.STRING(255),
         allowNull: false,
-        validate: {
-            isEmail: true,
-            notEmpty: true
-        }
+        validate: { isEmail: true }
     },
-    // Upgraded: Predefined categories for fast filtering/sorting
     reasonCategory: {
         type: DataTypes.ENUM('fake_account', 'unislamic_media', 'wrong_location', 'inappropriate_info', 'other'),
-        allowNull: false,
-        validate: {
-            notEmpty: true
-        }
+        allowNull: false
     },
-    // Upgraded: Stores the user's custom text descriptions
     customReason: {
         type: DataTypes.TEXT,
         allowNull: true, 

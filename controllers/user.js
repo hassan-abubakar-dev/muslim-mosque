@@ -57,12 +57,11 @@ export const searchUserByEmail = async (req, res, next) => {
 
         const targetEmail = email.toLowerCase().trim();
 
-        // 🛑 ISSUE 2 FIX: Prevent admin from searching or adding themselves
         if (req.user.email?.toLowerCase().trim() === targetEmail) {
             return next(new AppError('You cannot search for or add yourself to your own mosque management team.', 400));
         }
 
-        // 🖼️ ISSUE 1 FIX: Include Profile model to pull the secure user image data structure
+        //  Include Profile model to pull the secure user image data structure
         const user = await User.findOne({
             where: { email: targetEmail },
             attributes: ['id', 'firstName', 'surName', 'email'],
@@ -186,38 +185,6 @@ export const updateUserInfo = async (req, res, next) => {
 
 
 // new functions for super admin
-export const getUserCounts = async (req, res, next) => {
-    try {
-        // Run queries in parallel for better performance
-        const [totalActiveUsers, totalInActiveUsers, totalAgents] = await Promise.all([
-            User.count({ where: { isVerify: true } }),
-            User.count({ where: { isVerify: false } }),
-            User.count({ where: { isVerify: true, role: 'agent' } })
-        ]);
-
-        // Use 200 for successful data retrieval
-        return res.status(200).json({
-            status: 'success',
-            usersCounts: {
-                totalActiveUsers,
-                totalInActiveUsers,
-                totalAgents
-            }
-        });
-    } catch (err) {
-        // Log the full error in development for better debugging
-        if (process.env.NODE_ENV === 'development') {
-            console.error(err); 
-        }
-        
-        return next(new AppError(
-            process.env.NODE_ENV === 'development' 
-                ? err.message 
-                : 'Something went wrong during the user lookup process.',
-            500
-        ));
-    }
-};
 
 export const getAllVerifiedUsers = async (req, res, next) => {
     try {
@@ -225,27 +192,30 @@ export const getAllVerifiedUsers = async (req, res, next) => {
         const page = parseInt(req.query.page) || 1;
         const limit = parseInt(req.query.limit) || 10;
         const offset = (page - 1) * limit;
-        const searchTerm = req.query.search; // Optional: ?search=John
-        console.log('Pagination params - page:', page, 'limit:', limit, 'search:', searchTerm);
+        const searchTerm = req.query.search;
 
         // 2. Build filter conditions
-        const whereClause = {
-            isVerify: true // Only verified users
-        };
+        const whereClause = { isVerify: true };
 
-        // If search term is provided, check name or email
-      if (searchTerm) {
-    whereClause[Op.or] = [
-        { firstName: { [Op.like]: `%${searchTerm}%` } }, 
-        { surName: { [Op.like]: `%${searchTerm}%` } },  
-        { email: { [Op.like]: `%${searchTerm}%` } }     
-    ];
-}
+        if (searchTerm) {
+            whereClause[Op.or] = [
+                { firstName: { [Op.like]: `%${searchTerm}%` } },
+                { surName: { [Op.like]: `%${searchTerm}%` } },
+                { email: { [Op.like]: `%${searchTerm}%` } }
+            ];
+        }
 
-        // 3. Fetch data with count for frontend pagination
+        // 3. Fetch data with inclusion
         const { count, rows: users } = await User.findAndCountAll({
             where: whereClause,
-            attributes: ['id', 'firstName', 'surName', 'email', 'role', 'isVerify'], 
+            attributes: ['id', 'firstName', 'surName', 'email', 'role', 'isVerify'],
+            include: [
+                {
+                    model: UserProfile,
+                    as: 'userProfile', // Ensure this matches your association alias
+                    attributes: ['image'] // ONLY fetching the image field
+                }
+            ],
             limit,
             offset,
             order: [['createdAt', 'DESC']]
@@ -263,13 +233,45 @@ export const getAllVerifiedUsers = async (req, res, next) => {
 
     } catch (err) {
         console.error('Fetch all users error:', err);
-        return next(new AppError(
-            process.env.NODE_ENV === 'development' 
-                ? err.message 
-                : 'Failed to retrieve user directory.',
-            500
-        ));
+        return next(new AppError('Failed to retrieve user directory.', 500));
     }
 };
 
 
+export const toggleUserRole = async (req, res, next) => {
+    // 1. Start a transaction
+    const transaction = await dbConnection.transaction();
+    try {
+        const { userId } = req.params;
+
+        // 2. Fetch with transaction lock
+        const user = await User.findByPk(userId, { transaction });
+        if (!user) {
+            await transaction.rollback();
+            return next(new AppError('User not found.', 404));
+        }
+
+        if (user.role !== 'agent' && user.role !== 'user') {
+            await transaction.rollback();
+            return next(new AppError('This user role cannot be modified.', 403));
+        }
+
+        user.role = user.role === 'agent' ? 'user' : 'agent';
+        await user.save({ transaction });
+
+        // 3. Commit
+        await transaction.commit();
+
+        res.status(200).json({
+            status: 'success',
+            message: `User role successfully updated to ${user.role}.`,
+            user: { id: user.id, role: user.role }
+        });
+
+    } catch (err) {
+        // 4. Rollback on any error
+        if (transaction) await transaction.rollback();
+        console.error('Toggle role error:', err);
+        return next(new AppError('Failed to update user role.', 500));
+    }
+};

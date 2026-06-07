@@ -1,39 +1,33 @@
-import Report from '../models/Report.js';
-import Mosque from '../models/Mosque.js';
-import User from '../models/User.js';
+import {Report, Mosque, User} from '../models/relationship.js'
+import AppError from '../utils/AppError.js';
+import sendEmail from '../utils/sendEmail.js';
 
-// =========================================================
-// 1. USER SUBMITS A REPORT (Saves Denormalized Data Safely)
-// =========================================================
+
 export const createReport = async (req, res, next) => {
     try {
-        const { mosqueId, reasonCategory, customReason } = req.body;
+        // 1. Get mosqueId from URL parameters, others from body
+        const { mosqueId } = req.params; 
+        const { reasonCategory, customReason, mosqueName } = req.body;
 
-        // 🔍 1. Find the target mosque to capture its current name snapshot
-        const targetMosque = await Mosque.findByPk(mosqueId);
-        if (!targetMosque) {
-            return res.status(404).json({
-                status: 'fail',
-                message: 'The target mosque profile could not be found.'
-            });
+        // 2. Validate Category
+        const validCategories = ['fake_account', 'unislamic_media', 'wrong_location', 'inappropriate_info', 'other'];
+        if (!validCategories.includes(reasonCategory)) {
+            return res.status(400).json({ status: 'fail', message: 'Invalid report category.' });
         }
 
-        // 🔍 2. Find the logged-in user profile to grab their identity details 
-        // (Assuming your auth middleware assigns user details to req.user)
-        const reporter = await User.findByPk(req.user.id);
-        if (!reporter) {
-            return res.status(404).json({
-                status: 'fail',
-                message: 'User authentication profile error.'
-            });
+        // 3. Minimal Check: Verify the Mosque exists
+        const mosqueExists = await Mosque.count({ where: { id: mosqueId } });
+        if (!mosqueExists) {
+            return res.status(404).json({ status: 'fail', message: 'Target mosque not found.' });
         }
 
-        // ⚡ 3. Create the flat report row record using our updated fields
+        // 4. Create the record
         const report = await Report.create({
-            targetMosqueName: targetMosque.name,
-            // Assuming your user schema uses firstName/surName or common fallback properties
-            reporterName: `${reporter.firstName || ''} ${reporter.surName || reporter.name || ''}`.trim() || 'Anonymous User',
-            reporterEmail: reporter.email,
+            mosqueId, // Using the ID from the route params
+            reporterId: req.user.id,
+            targetMosqueName: mosqueName, 
+            reporterName: req.user.name || 'Anonymous User',
+            reporterEmail: req.user.email,
             reasonCategory,
             customReason,
             status: 'pending'
@@ -49,52 +43,87 @@ export const createReport = async (req, res, next) => {
     }
 };
 
-// =========================================================
-// 2. SUPER ADMIN GETS ALL ACTIVE PENDING REPORTS
-// =========================================================
+
+
 export const getAllReports = async (req, res, next) => {
     try {
-        // Pull down our independent pagination limit dynamically from query parameters if needed
-        const limit = parseInt(req.query.limit, 10) || 5;
+        // 1. Sanitize pagination inputs
+        const limit = Math.min(parseInt(req.query.limit, 1) || 5, 50); // Cap at 50
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);    // Minimum page 1
+        const offset = (page - 1) * limit;
 
-        // 🚀 High-speed fetch query with zero joins needed for primary layout rendering
-        const reports = await Report.findAll({
+        // 2. Fetch using only the Report table (High Performance)
+        const { count, rows: reports } = await Report.findAndCountAll({
             where: { status: 'pending' },
-            limit: limit,
+            limit,
+            offset,
             order: [['createdAt', 'DESC']]
         });
 
+        // 3. Return clean, structured response
         res.status(200).json({
             status: 'success',
             results: reports.length,
+            totalCount: count,
+            totalPages: Math.ceil(count / limit),
+            currentPage: page,
             data: { reports }
         });
     } catch (err) {
-        next(err);
+        // Log the error for backend debugging
+        console.error("FULL REPORT ERROR:", err); 
+        
+        return next(new AppError(
+            process.env.NODE_ENV === 'development' ? err.message : 'Failed to retrieve reports.', 
+            500
+        ));
     }
 };
 
-// =========================================================
-// 3. SUPER ADMIN RESOLVES AND CLOSES A TICKETS ENTRY
-// =========================================================
 export const resolveReport = async (req, res, next) => {
     try {
-        const report = await Report.findByPk(req.params.id);
+        // 1. Find the report
+        const {id} = req.params;
+        const report = await Report.findByPk(id);
+        
         if (!report) {
             return res.status(404).json({ 
                 status: 'fail',
-                message: 'Report registration index not found.' 
+                message: 'Report ticket not found.' 
             });
         }
 
+        // 2. Update status
         report.status = 'resolved';
         await report.save();
 
-        res.status(200).json({ 
-            status: 'success', 
-            message: 'Report ticket marked as resolved and successfully filed away.' 
+        // 3. Prepare professional email notification
+        const html = `
+            <h2>Report Resolved</h2>
+            <p>Dear Reporter,</p>
+            <p>We are writing to inform you that your report regarding <strong>${report.targetMosqueName}</strong> has been investigated and resolved.</p>
+            <p>Thank you for your contribution to maintaining our community standards.</p>
+            <br>
+            <p>Best regards,<br>Muslim Mosque Admin Team</p>
+        `;
+
+        
+        await sendEmail({
+            to: report.reporterEmail,
+            subject: `Update: Your report for ${report.targetMosqueName} has been resolved`,
+            html,
         });
+
+        // 5. Success response
+        return res.status(200).json({ 
+            status: 'success', 
+            message: 'Report ticket marked as resolved and notification sent.' 
+        });
+
     } catch (err) { 
+        console.error("RESOLVE REPORT ERROR:", err.message);
         next(err);
     }
 };
+
+
