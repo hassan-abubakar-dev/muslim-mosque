@@ -3,6 +3,8 @@ import { User, UserProfile, Mosque } from '../models/relationship.js'; // Adjust
 import dbConnection from "../config/db.js";
 import { Op } from 'sequelize';
 
+import { v2 as cloudinary } from 'cloudinary';
+
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -273,5 +275,67 @@ export const toggleUserRole = async (req, res, next) => {
         if (transaction) await transaction.rollback();
         console.error('Toggle role error:', err);
         return next(new AppError('Failed to update user role.', 500));
+    }
+};
+
+
+
+export const deleteAccount = async (req, res, next) => {
+    const t = await dbConnection.transaction();
+
+    try {
+        const userId = req.user.id;
+
+        const user = await User.findByPk(userId, {
+            include: [{ model: UserProfile, as: 'userProfile' }]
+        });
+
+        if (!user) {
+            await t.rollback();
+            return next(new AppError('User account not found.', 404));
+        }
+
+    if (user.role === 'superAdmin') {
+    await t.rollback();
+    // Vague error: Attacker doesn't know why, they just know "No"
+    return next(new AppError('This action is not permitted for this account.', 403));
+}
+
+        // --- STEP A: Clear Space on Cloudinary ---
+        if (user.userProfile?.publicId) {
+            try {
+                await cloudinary.uploader.destroy(user.userProfile.publicId);
+            } catch (cloudErr) {
+                console.error('Failed to clear user profile image from Cloudinary:', cloudErr);
+            }
+        }
+
+        // --- STEP B: Delete from Database ---
+        await user.destroy({ transaction: t });
+
+        await t.commit();
+
+        res.clearCookie('refreshToken', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            maxAge: 0 
+        });
+
+        res.status(200).json({
+            status: 'success',
+            message: 'Account and associated records deleted successfully.'
+        });
+
+    } catch (err) {
+        if (t) await t.rollback();
+        
+        console.error('Account deletion error:', err);
+        next(new AppError(
+            process.env.NODE_ENV === 'development' 
+            ? err.message 
+            : 'Failed to delete account. Please try again.', 
+            500
+        ));
     }
 };

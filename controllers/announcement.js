@@ -8,7 +8,7 @@ const isDev = process.env.NODE_ENV === 'development';
 export const createAnnouncement = async (req, res, next) => {
     try {
         const { mosqueId } = req.params;
-        const { title, content, imageUrl, imagePublicId } = req.body;
+        const { title, content, imageUrl, publicId } = req.body;
         // const adminId = req.user.id; // From your auth middleware
 
         // Basic verification: does mosque exist?
@@ -22,8 +22,8 @@ export const createAnnouncement = async (req, res, next) => {
             title,
             content,
             mosqueId,
-            image: (imageUrl && imagePublicId) ? imageUrl : null,
-            ipublicId: (imageUrl && imagePublicId) ? imagePublicId : null,
+            image: (imageUrl && publicId) ? imageUrl : null,
+            publicId: (imageUrl && publicId) ? publicId : null,
         };
 
         const newAnnouncement = await Announcement.create(announcementData);

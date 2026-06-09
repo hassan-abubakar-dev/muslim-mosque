@@ -1,6 +1,8 @@
 import dbConnection from "../config/db.js";
-import { FollowMosque, Mosque, MosqueAdmin, MosqueProfile, User } from "../models/relationship.js";
+import { FollowMosque, Mosque, MosqueAdmin, MosqueProfile, User, Category, Announcement, CategoryProfile } from "../models/relationship.js";
+import performCategoryCleanup from "../service/category.js";
 import AppError from "../utils/AppError.js";
+import cloudinary from "../config/claudinary.js";
 import dotenv from "dotenv";
 import { Op, fn, col, literal } from "sequelize";
 
@@ -328,6 +330,34 @@ export const getPendingMosques = async(req, res, next) => {
     }
 };
 
+
+
+
+export const getFollowedMosqueIds = async (req, res, next) => {
+  try {
+
+    const userId = req.user.id;
+
+    // 2. Fetch only the mosque_ids for this user from the join table
+    const followedIds = await FollowMosque.findAll({
+      where: { userId },
+      attributes: ["mosqueId"], // Only fetch the ID column
+    });
+
+    // 3. Map to a clean array of strings/numbers: [id1, id2, id3]
+    const ids = followedIds.map((item) => String(item.mosqueId));
+
+    // 4. Return the clean array
+    return res.status(200).json({
+      status: "success",
+      followedMosqueIds: ids,
+    });
+  } catch (err) {
+    console.error("ERROR IN getFollowedMosqueIds:", err);
+    return next(new AppError("Something went wrong while fetching your follow list.", 500));
+  }
+};
+
 export const verifiedMosque = async (req, res, next) => {
     try {
         const { mosqueId } = req.params;
@@ -363,27 +393,154 @@ export const verifiedMosque = async (req, res, next) => {
 };
 
 
-export const getFollowedMosqueIds = async (req, res, next) => {
+
+export const getSuspendedMosques = async (req, res, next) => {
   try {
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.max(1, parseInt(req.query.limit) || 10);
+    const offset = (page - 1) * limit;
 
-    const userId = req.user.id;
-
-    // 2. Fetch only the mosque_ids for this user from the join table
-    const followedIds = await FollowMosque.findAll({
-      where: { userId },
-      attributes: ["mosqueId"], // Only fetch the ID column
+    const data = await Mosque.findAndCountAll({
+      where: { status: 'suspended' },
+      limit: limit,
+      offset: offset,
+      order: [["updatedAt", "DESC"]],
+      distinct: true,
     });
 
-    // 3. Map to a clean array of strings/numbers: [id1, id2, id3]
-    const ids = followedIds.map((item) => String(item.mosqueId));
-
-    // 4. Return the clean array
-    return res.status(200).json({
-      status: "success",
-      followedMosqueIds: ids,
+    res.status(200).json({
+      status: 'success',
+      suspendedMosques: data.rows, // Frontend looks for 'suspendedMosques'
+      totalPages: Math.ceil(data.count / limit) // Frontend looks for 'totalPages'
     });
   } catch (err) {
-    console.error("ERROR IN getFollowedMosqueIds:", err);
-    return next(new AppError("Something went wrong while fetching your follow list.", 500));
+    next(err);
+  }
+};
+
+export const toggleSuspendAndUnsuspend = async (req, res, next) => {
+    try {
+        const { mosqueId } = req.params;
+
+        const mosque = await Mosque.findByPk(mosqueId);
+        
+        if (!mosque) {
+            return next(new AppError('No mosque found with this ID', 404));
+        }
+
+        // Toggle logic
+        if (mosque.status === 'verified') {
+            mosque.status = 'suspended';
+        } else if (mosque.status === 'suspended') {
+            mosque.status = 'verified';
+        } else {
+            // Optional: Handle if the mosque is in 'pending' status
+            return next(new AppError('Only verified or suspended mosques can be toggled', 400));
+        }
+
+        await mosque.save();
+
+        res.status(200).json({
+            status: 'success',
+            message: `Mosque ${mosque.name} is now ${mosque.status}` // Fixed variable here
+        });
+    } catch (err) {
+        next(new AppError('Update failed', 500));
+    }
+};
+
+
+
+
+
+export const deleteMosque = async (req, res, next) => {
+  const { id } = req.params;
+  const transaction = await dbConnection.transaction();
+
+  try {
+    // 1. Fetch Mosque + Profile + Categories (Low cardinality)
+    // Optimized: Only fetch specific fields
+    const mosque = await Mosque.findByPk(id, {
+      attributes: ['id'], 
+      include: [
+        { 
+          model: MosqueProfile, 
+          as: 'mosqueProfile', 
+          attributes: ['publicId'] 
+        },
+        { 
+          model: Category, 
+          as: 'mosqueCategory',
+          attributes: ['id'] 
+        }
+      ],
+      transaction
+    });
+
+    if (!mosque) {
+      await transaction.rollback();
+      return next(new AppError("Mosque not found", 404));
+    }
+
+    // 2. Permission Guard: SuperAdmin OR Mosque Owner (via MosqueAdmin table)
+    const isSuperAdmin = req.user.role === 'superAdmin';
+    let isOwner = false;
+    
+    if (!isSuperAdmin) {
+      const adminRecord = await MosqueAdmin.findOne({
+        where: { mosqueId: id, userId: req.user.id, role: 'owner' },
+        attributes: ['id'],
+        transaction
+      });
+      if (adminRecord) isOwner = true;
+    }
+
+    if (!isSuperAdmin && !isOwner) {
+      await transaction.rollback();
+      return next(new AppError("Only the mosque owner or super admin can perform this action", 403));
+    }
+
+    // 3. CLEANUP ANNOUNCEMENTS (Hybrid Approach: Targeted/High-Cardinality Fetch)
+    const announcements = await Announcement.findAll({
+      where: { mosqueId: id },
+      attributes: ['id', 'publicId'], 
+      transaction
+    });
+
+    if (announcements.length > 0) {
+      // Parallel file destruction
+      await Promise.all(announcements.map(async (ann) => {
+        if (ann.publicId) await cloudinary.uploader.destroy(ann.publicId);
+      }));
+      // Batch record destruction
+      await Announcement.destroy({ 
+        where: { id: announcements.map(a => a.id) }, 
+        transaction 
+      });
+    }
+
+    // 4. CLEANUP CATEGORIES (Using Service Layer)
+    if (mosque.mosqueCategory?.length > 0) {
+      for (const cat of mosque.mosqueCategory) {
+        await performCategoryCleanup(cat.id, transaction);
+      }
+    }
+
+    // 5. CLEANUP MOSQUE PROFILE (Cloudinary)
+    if (mosque.mosqueProfile?.publicId) {
+      await cloudinary.uploader.destroy(mosque.mosqueProfile.publicId);
+      await MosqueProfile.destroy({ where: { mosqueId: id }, transaction });
+    }
+
+    // 6. FINAL DELETION (Mosque record)
+    await mosque.destroy({ transaction });
+
+    await transaction.commit();
+    res.status(200).json({ success: true, message: "Mosque permanently deleted." });
+
+  } catch (err) {
+    if (transaction && !transaction.finished) await transaction.rollback();
+    console.error("Delete Mosque Error:", err.message);
+    next(new AppError("Failed to delete mosque: " + err.message, 500));
   }
 };

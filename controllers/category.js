@@ -3,8 +3,9 @@ import dbConnection from "../config/db.js";
 import AppError from "../utils/AppError.js";
 import dotenv from 'dotenv';
 import { Op } from "sequelize";
-import {Category, CategoryProfile} from '../models/relationship.js'
+import {Category, CategoryProfile, Lecture} from '../models/relationship.js'
 import { deleteFileFromR2 } from "../utils/r2.js"; 
+import performCategoryCleanup from "../service/category.js";
 
 
 dotenv.config();
@@ -14,7 +15,8 @@ export const createCategory = async (req, res, next) => {
   const transaction = await dbConnection.transaction();
   
   try {
-    const { name, teacherName, information, fileKey } = req.body;
+    // 1. Destructure the new Cloudinary fields
+    const { name, teacherName, information, imageUrl, publicId } = req.body;
     const { mosqueId } = req.params;
 
     if (!mosqueId) {
@@ -33,13 +35,7 @@ export const createCategory = async (req, res, next) => {
       );
     }
 
-    // 🔥 generate URL from key
-    let imageUrl = null;
-    if (fileKey) {
-      imageUrl = `${process.env.R2_PUBLIC_URL}/${fileKey}`;
-    }
-
-    // ✅ create category
+    // 2. Create the Category
     const newCategory = await Category.create(
       {
         name,
@@ -50,12 +46,12 @@ export const createCategory = async (req, res, next) => {
       { transaction }
     );
 
-    // ✅ create profile if image exists
-    if (fileKey) {
+    // 3. Create profile ONLY if Cloudinary data exists
+    if (imageUrl && publicId) {
       await CategoryProfile.create(
         {
           image: imageUrl,
-          publicId: fileKey, // 🔥 this is your key for deletion
+          publicId: publicId, // Using the real Cloudinary publicId
           categoryId: newCategory.id
         },
         { transaction }
@@ -68,20 +64,17 @@ export const createCategory = async (req, res, next) => {
       success: true,
       message: "Category created successfully",
       newCategory,
-      categoryProfile: fileKey
-        ? { image: imageUrl, publicId: fileKey }
+      categoryProfile: (imageUrl && publicId) 
+        ? { image: imageUrl, publicId } 
         : null
     });
 
   } catch (err) {
     await transaction.rollback();
     console.error(err);
-
     next(
       new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Something went wrong",
+        process.env.NODE_ENV === "development" ? err.message : "Something went wrong",
         500
       )
     );
@@ -102,20 +95,20 @@ export const updateCategory = async (req, res, next) => {
       return next(new AppError("category id required", 400));
     }
 
-    const { name, teacherName, information, fileKey } = req.body;
+    // 1. Destructure the new Cloudinary fields
+    const { name, teacherName, information, imageUrl, publicId } = req.body;
 
     const category = await Category.findByPk(id);
-
     if (!category) {
       await transaction.rollback();
       return next(new AppError("Category not found", 404));
     }
 
-    // 🔒 prevent duplicates
+    // 2. Prevent duplicates
     const existingCategory = await Category.findOne({
       where: {
-        name,
-        teacherName,
+        name: name || category.name,
+        teacherName: teacherName || category.teacherName,
         id: { [Op.not]: id },
       },
     });
@@ -127,47 +120,43 @@ export const updateCategory = async (req, res, next) => {
       );
     }
 
-    // ✅ Update category fields
+    // 3. Update Category fields
     await category.update(
       {
         name: name ? name.trim() : category.name,
-        teacherName: teacherName
-          ? teacherName.trim()
-          : category.teacherName,
-        information: information
-          ? information.trim()
-          : category.information,
+        teacherName: teacherName ? teacherName.trim() : category.teacherName,
+        information: information ? information.trim() : category.information,
       },
       { transaction }
     );
 
-    // 🔥 HANDLE IMAGE (R2)
-    if (fileKey) {
+    // 4. Handle Image (Cloudinary)
+    if (imageUrl && publicId) {
       const categoryProfile = await CategoryProfile.findOne({
         where: { categoryId: id },
+        transaction,
       });
 
-      // 👉 build public URL (important)
-      const imageUrl = `${process.env.R2_PUBLIC_URL}/${fileKey}`;
-
       if (categoryProfile) {
-        const oldKey = categoryProfile.fileKey; // 👈 store this in DB
+        // Store old ID to delete later
+        const oldPublicId = categoryProfile.publicId;
 
+        // Update with new data
         categoryProfile.image = imageUrl;
-        categoryProfile.fileKey = fileKey;
-
+        categoryProfile.publicId = publicId;
         await categoryProfile.save({ transaction });
 
-        // 🔥 delete old file from R2
-        if (oldKey) {
-          await deleteFileFromR2(oldKey);
+        // 🔥 Delete old file from Cloudinary
+        if (oldPublicId) {
+          await cloudinary.uploader.destroy(oldPublicId);
         }
       } else {
+        // Create new profile if it didn't exist
         await CategoryProfile.create(
           {
             categoryId: id,
             image: imageUrl,
-            fileKey: fileKey,
+            publicId: publicId,
           },
           { transaction }
         );
@@ -181,7 +170,6 @@ export const updateCategory = async (req, res, next) => {
       message: "Category updated successfully",
       category,
     });
-
   } catch (err) {
     await transaction.rollback();
     console.error(err);
@@ -198,75 +186,15 @@ export const updateCategory = async (req, res, next) => {
 };
 
 
-// Delete a category (soft delete - admin only)
-
 export const deleteCategory = async (req, res, next) => {
   const transaction = await dbConnection.transaction();
-
   try {
-    const { id } = req.params;
-
-    if (!id) {
-      await transaction.rollback();
-      return next(new AppError("Category id required", 400));
-    }
-
-    const category = await Category.findByPk(id, { transaction });
-
-    if (!category) {
-      await transaction.rollback();
-      return next(new AppError("Category not found", 404));
-    }
-
-    const categoryProfile = await CategoryProfile.findOne({
-      where: { categoryId: id },
-      transaction,
-    });
-
-    // 🔥 DELETE FILE FROM R2 (if exists)
-    if (categoryProfile && categoryProfile.fileKey) {
-      try {
-        await deleteFileFromR2(categoryProfile.fileKey);
-      } catch (error) {
-        await transaction.rollback();
-        return next(
-          new AppError(
-            process.env.NODE_ENV === "development"
-              ? error.message
-              : `Failed to delete file from storage`
-          )
-        );
-      }
-    }
-
-    // ✅ delete profile record (optional but clean)
-    if (categoryProfile) {
-      await categoryProfile.destroy({ transaction });
-    }
-
-    // ✅ delete category
-    await category.destroy({ transaction });
-
+    await performCategoryCleanup(req.params.id, transaction);
     await transaction.commit();
-
-    res.status(200).json({
-      success: true,
-      message: "Category deleted successfully",
-    });
-
+    res.status(200).json({ success: true, message: "Category deleted successfully" });
   } catch (err) {
-    if (!transaction.finished) await transaction.rollback();
-
-    console.error(err.message);
-
-    next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Something went wrong",
-        500
-      )
-    );
+    await transaction.rollback();
+    next(new AppError(err.message, 500));
   }
 };
 

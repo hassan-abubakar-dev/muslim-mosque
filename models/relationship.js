@@ -29,8 +29,7 @@ UserProfile.belongsTo(User, {
 // mosque and profile
 Mosque.hasOne(MosqueProfile, {
     as: 'mosqueProfile',
-    foreignKey: 'mosqueId',
-    onDelete: 'CASCADE'
+    foreignKey: 'mosqueId' 
 });
 MosqueProfile.belongsTo(Mosque, {
     as: 'mosqueProfile',
@@ -42,8 +41,7 @@ MosqueProfile.belongsTo(Mosque, {
 // mosque and category
 Mosque.hasMany(Category, {
     foreignKey: 'mosqueId',
-    as: 'mosqueCategory',
-    onDelete: 'CASCADE'
+    as: 'mosqueCategory'
 });
 
 Category.belongsTo(Mosque, {
@@ -56,8 +54,7 @@ Category.belongsTo(Mosque, {
 // category and category profile
 Category.hasOne(CategoryProfile, {
     as: 'categoryProfile',
-    foreignKey: 'categoryId',
-    onDelete: 'CASCADE'
+    foreignKey: 'categoryId', //delete onDelete let manually delete
 });
 
 CategoryProfile.belongsTo(Category, {
@@ -68,8 +65,7 @@ CategoryProfile.belongsTo(Category, {
 // lacture and category
 Category.hasMany(Lecture, {
   foreignKey: 'categoryId',
-  as: 'lectures',
-  onDelete: 'CASCADE'
+  as: 'lectures'
 });
 
 Lecture.belongsTo(Category, {
@@ -138,8 +134,7 @@ Mosque.hasMany(MosqueAdmin, {foreignKey: 'mosqueId', as: 'mosquAdmin'})
 
   Mosque.hasMany(Announcement, { 
         foreignKey: 'mosqueId', 
-        as: 'announcements',
-        onDelete: 'CASCADE' // If mosque is deleted, announcements are too
+        as: 'announcements'
     });
     Announcement.belongsTo(Mosque, { 
         foreignKey: 'mosqueId',
@@ -192,7 +187,8 @@ Report.belongsTo(Mosque, { foreignKey: 'mosqueId' });
 // A User can have many Feedbacks
 User.hasMany(Feedback, {
   foreignKey: 'userId',
-  as: 'feedbacks' // Optional alias
+  as: 'feedbacks', // Optional alias
+  onDelete: 'CASCADE'
 });
 
 // A Feedback belongs to one User
@@ -201,7 +197,7 @@ Feedback.belongsTo(User, {
   as: 'user' // This is what you will use in your 'include' query
 });
 
-User.hasMany(VideoLibrary, { foreignKey: 'userId', as: 'libraryItems' });
+User.hasMany(VideoLibrary, { foreignKey: 'userId', as: 'libraryItems', onDelete: 'CASCADE' });
 VideoLibrary.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 // change alias of videoLibrary with lecture from 'lecture' to 'lectureLibrary'

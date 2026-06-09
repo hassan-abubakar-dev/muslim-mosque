@@ -5,7 +5,7 @@ import { createAnnouncement, getAnnouncements, deleteAnnouncement} from '../cont
 
 const router = express.Router();
 
-router.get('/get-announcements/:mosqueId', protectRoutes, getAnnouncements);
+router.get('/get-announcements/:mosqueId',  getAnnouncements);
 router.post('/create-announcement/:mosqueId', protectRoutes, createAnnouncement);
 router.delete('/delete-announcement/:id', protectRoutes, deleteAnnouncement);
 
