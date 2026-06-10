@@ -69,6 +69,9 @@ app.use(errorHandler);
     if(process.env.NODE_ENV === 'development'){            
       // for development use alter to update the existing tables
       await dbConnection.sync({ alter: true});  
+    
+  console.log(`Database Dialect detected as: ${dbConnection.getDialect()}`);
+
     } else { 
       // for production use sync without alter
       await dbConnection.sync(); 

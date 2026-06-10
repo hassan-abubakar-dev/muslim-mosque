@@ -5,6 +5,7 @@ import AppError from "../utils/AppError.js";
 import cloudinary from "../config/claudinary.js";
 import dotenv from "dotenv";
 import { Op, fn, col, literal } from "sequelize";
+import getLikeOperator from "../utils/dbHelpers.js";
 
 dotenv.config();
 
@@ -115,17 +116,20 @@ export const registerMosque = async (req, res, next) => {
 };
 
   
-
 export const getMosques = async (req, res, next) => {
   try {
     const search = req.query.search || "";
     const state = req.query.state;
     const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.max(1, parseInt(req.query.limit) || 10);
+    // Hard cap the limit to protect the DB from massive requests
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
     const offset = (page - 1) * limit;
 
     const whereCondition = {};
-    if (search) whereCondition.name = { [Op.like]: `%${search}%` };
+    const OpLike = getLikeOperator();
+    
+    // Explicit search filtering
+    if (search.trim()) whereCondition.name = { [OpLike]: `%${search.trim()}%` };
     if (state) whereCondition.state = state;
 
     const { rows: mosques, count } = await Mosque.findAndCountAll({
@@ -133,14 +137,10 @@ export const getMosques = async (req, res, next) => {
       attributes: {
         include: [
           [
-            literal(`(
-              SELECT COUNT(*)
-              FROM followmosques AS followMosques
-              WHERE followMosques.mosque_id = Mosque.id
-            )`),
+            // Using a strictly hardcoded subquery
+            literal(`(SELECT COUNT(*) FROM followmosques AS fm WHERE fm.mosque_id = "Mosque".id)`),
             "followersCount",
           ],
-          // "isFollowing" subquery has been removed for a cleaner query
         ],
       },
       include: [
@@ -150,8 +150,8 @@ export const getMosques = async (req, res, next) => {
           attributes: ["image"],
         },
       ],
-      limit: limit,
-      offset: offset,
+      limit,
+      offset,
       order: [["createdAt", "DESC"]],
       distinct: true,
     });
@@ -163,25 +163,25 @@ export const getMosques = async (req, res, next) => {
       mosques,
     });
   } catch (err) {
+    // In production, your global error handler will mask this error
     next(err);
   }
 };
 
 
 
+
+
 export const getMosque = async (req, res, next) => {
   try {
-    const { id } = req.params; // Expecting ID from the URL: /mosque/:id
+    const { id } = req.params;
 
     const mosque = await Mosque.findByPk(id, {
       attributes: {
         include: [
           [
-            literal(`(
-              SELECT COUNT(*)
-              FROM followmosques AS followMosques
-              WHERE followMosques.mosque_id = Mosque.id
-            )`),
+            // Using explicit table naming for cross-dialect safety
+            literal(`(SELECT COUNT(*) FROM followmosques AS fm WHERE fm.mosque_id = "Mosque".id)`),
             "followersCount",
           ],
         ],
@@ -194,7 +194,6 @@ export const getMosque = async (req, res, next) => {
       ],
     });
 
-    // Handle case where no mosque is found with the provided ID
     if (!mosque) {
       return res.status(404).json({
         status: "error",
@@ -204,11 +203,14 @@ export const getMosque = async (req, res, next) => {
 
     return res.status(200).json({
       status: "success",
-        mosque
+      mosque
     });
   } catch (err) {
-    next(new AppError( process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong during fetch mosque', 
-                500));
+    // Excellent use of conditional error messages for production safety
+    const message = process.env.NODE_ENV === 'development' 
+      ? err.message 
+      : 'Something went wrong during fetch mosque';
+    next(new AppError(message, 500));
   }
 };
 

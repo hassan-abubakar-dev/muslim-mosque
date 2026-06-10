@@ -3,6 +3,7 @@ import {Bookmark, Lecture, Mosque} from '../models/relationship.js';
 
 import AppError from '../utils/appError.js';
 import { Op } from 'sequelize';
+import getLikeOperator from '../utils/dbHelpers.js';
 
 // 1. Toggle Bookmark (Add or Remove)
 export const toggleBookmark = async (req, res, next) => {
@@ -63,7 +64,8 @@ export const getBookmarks = async (req, res, next) => {
     // 1. Build the filter for the included Lecture model
     const lectureWhere = {};
     if (search && search.trim() !== "") {
-      lectureWhere.title = { [Op.like]: `%${search}%` };
+      const OpLike = getLikeOperator();
+      lectureWhere.title = { [OpLike]: `%${search}%` };
     }
     if (type && (type === 'video' || type === 'audio')) {
       lectureWhere.type = type;

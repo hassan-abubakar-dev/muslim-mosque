@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 // import Bookmark from "../models/bookmark.js";
 import { Lecture, Category, Notification, Bookmark } from "../models/relationship.js";
 import { Op } from "sequelize";
+import getLikeOperator from "../utils/dbHelpers.js";
 
 dotenv.config();
 
@@ -189,8 +190,9 @@ export const getLectures = async (req, res, next) => {
     
     // Add Search logic
     if (search && search.trim() !== "") {
+      const OpLike = getLikeOperator();
       whereClause.title = {
-        [Op.like]: `%${search}%` 
+        [OpLike]: `%${search}%` 
       };
     }
 

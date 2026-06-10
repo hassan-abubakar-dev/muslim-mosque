@@ -3,6 +3,7 @@ import { VideoLibrary, Lecture, Category, Mosque } from '../models/relationship.
 import { Op } from 'sequelize';
 import AppError from '../utils/AppError.js';
 import dotenv from 'dotenv';
+import getLikeOperator from '../utils/dbHelpers.js';
 
 dotenv.config();
 
@@ -16,49 +17,49 @@ export const getVideoLibrary = async (req, res, next) => {
   try {
     const userId = req.user.id;
     
-    // 1. Setup Pagination and Search params
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    // 1. Setup Pagination with hard cap
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
     const offset = (page - 1) * limit;
-    const searchTerm = req.query.search || "";
+    const searchTerm = (req.query.search || "").trim();
 
-    // 2. Define filter for the Lecture title
+    // 2. Define filter
     const lectureWhere = { type: 'video' };
     if (searchTerm) {
-      lectureWhere.title = { [Op.like]: `%${searchTerm}%` };
+      const OpLike = getLikeOperator();
+      lectureWhere.title = { [OpLike]: `%${searchTerm}%` };
     }
 
-    // 3. Find and Count for Pagination metadata
+    // 3. Find and Count
     const { count, rows: libraryItems } = await VideoLibrary.findAndCountAll({
       where: { userId },
       limit,
       offset,
-      include: [
-        {
-          model: Lecture,
-          as: 'lectureLibrary',
-          where: lectureWhere,
+      include: [{
+        model: Lecture,
+        as: 'lectureLibrary',
+        where: lectureWhere,
+        include: [{
+          model: Category,
+          as: 'category',
+          attributes: ['id'],
           include: [{
-            model: Category,
-            as: 'category',
-            attributes: ['id'],
-            include: [{
-              model: Mosque,
-              as: 'mosqueCategory',
-              attributes: ['name']
-            }]
+            model: Mosque,
+            as: 'mosqueCategory',
+            attributes: ['name']
           }]
-        }
-      ],
-      order: [['createdAt', 'DESC']]
+        }]
+      }],
+      order: [['createdAt', 'DESC']],
+      distinct: true // Crucial for accurate counts with includes
     });
 
-    // 4. Format the result
+    // 4. Format and sanitize
     const formattedLibrary = libraryItems.map(item => {
-      const lec = item.lectureLibrary.toJSON();
-      const { category, ...cleanLec } = lec; 
+      const lec = item.lectureLibrary?.get({ plain: true }) || {};
       return {
-        ...cleanLec,
+        id: lec.id,
+        title: lec.title,
         addedToLibraryAt: item.createdAt,
         mosqueName: lec.category?.mosqueCategory?.name || "General Lecture"
       };
@@ -72,10 +73,11 @@ export const getVideoLibrary = async (req, res, next) => {
       library: formattedLibrary
     });
   } catch (err) {
-    console.error("Error in getVideoLibrary:", err.message);
-    return next(new AppError(process.env.NODE_ENV === 'development' ? err.message : "Failed to retrieve video library.", 500));
+    // Development logs are fine, production stays clean
+    if (process.env.NODE_ENV === 'development') console.error(err);
+    return next(new AppError("Failed to retrieve video library.", 500));
   }
-};;
+};
 
 /**
  * @desc    Save or Remove a video from the user's library (Toggle system)

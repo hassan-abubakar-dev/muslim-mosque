@@ -6,6 +6,7 @@ import { Op } from 'sequelize';
 import { v2 as cloudinary } from 'cloudinary';
 
 import dotenv from 'dotenv';
+import getLikeOperator from "../utils/dbHelpers.js";
 
 dotenv.config();
 
@@ -200,10 +201,11 @@ export const getAllVerifiedUsers = async (req, res, next) => {
         const whereClause = { isVerify: true };
 
         if (searchTerm) {
+            const OpLike = getLikeOperator();
             whereClause[Op.or] = [
-                { firstName: { [Op.like]: `%${searchTerm}%` } },
-                { surName: { [Op.like]: `%${searchTerm}%` } },
-                { email: { [Op.like]: `%${searchTerm}%` } }
+                { firstName: { [OpLike]: `%${searchTerm}%` } },
+                { surName: { [OpLike]: `%${searchTerm}%` } },
+                { email: { [OpLike]: `%${searchTerm}%` } }
             ];
         }
 
@@ -223,6 +225,17 @@ export const getAllVerifiedUsers = async (req, res, next) => {
             order: [['createdAt', 'DESC']]
         });
 
+        const sanitizedUsers = users.map(user => {
+            const u = user.get({ plain: true });
+            return {
+                id: u.id,
+                fullName: `${u.firstName} ${u.surName}`, // Optional: Format output for FE
+                email: u.email,
+                role: u.role,
+                image: u.userProfile?.image || null // Safe access
+            };
+        });
+
         // 4. Return response
         return res.status(200).json({
             status: 'success',
@@ -230,7 +243,7 @@ export const getAllVerifiedUsers = async (req, res, next) => {
             totalUsers: count,
             totalPages: Math.ceil(count / limit),
             currentPage: page,
-            users
+            users: sanitizedUsers
         });
 
     } catch (err) {
