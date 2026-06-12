@@ -1,8 +1,9 @@
-// import MosqueAdmin from '../models/mosqueAdmin.js';
 import AppError from '../utils/appError.js';
-// import User from '../models/User.js';
-// import UserProfile from '../models/userProfile.js';
+import dotenv from 'dotenv';
 import { User, UserProfile, MosqueAdmin } from '../models/relationship.js';
+
+dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
 
 export const addAdminAssistant = async (req, res, next) => {
@@ -11,10 +12,6 @@ export const addAdminAssistant = async (req, res, next) => {
         console.log('Received request to add assistant:', { mosqueId, targetUserId, requesterId: req.user.id });
         const currentUserId = req.user.id; // From your verification token middleware
         
-
-        if (!mosqueId || !targetUserId) {
-            return next(new AppError('Missing required mosqueId or targetUserId parameters.', 400));
-        }
 
         // 1. Authorization: Verify the requester is actually the primary OWNER of this mosque
         const requesterAccess = await MosqueAdmin.findOne({
@@ -61,12 +58,9 @@ export const addAdminAssistant = async (req, res, next) => {
         });
 
     } catch (err) {
-        console.error('Error assigning assistant privileges:', err);
-        next(new AppError(
-            process.env.NODE_ENV === 'development' 
-                ? err.message 
-                : 'An error occurred while writing management privileges to the database.'
-        ));
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.body?.email && { email: req.body.email }) };
+        console.error('ADD_ADMIN_ASSISTANT_ERROR: Failed to add assistant', { context: errorContext, error: err });
+        next(new AppError(isDev ? err.message : 'An error occurred while writing management privileges to the database.'));
     }
 };
 
@@ -75,10 +69,7 @@ export const addAdminAssistant = async (req, res, next) => {
 export const fetchTeamRoster = async (req, res, next) => {
     try {
         const { mosqueId } = req.params; 
-        if (!mosqueId) {
-            return next(new AppError('Please provide a valid mosque identification parameter.', 400));
-        }
-
+    
         // Fetch all matching rows within your underscored junction table model
         const roster = await MosqueAdmin.findAll({
             where: { mosqueId },
@@ -114,12 +105,9 @@ export const fetchTeamRoster = async (req, res, next) => {
         });
 
     } catch (err) {
-        console.error('Error fetching mosque team framework:', err);
-        next(new AppError(
-            process.env.NODE_ENV === 'development' 
-                ? err.message 
-                : 'Something went wrong while retrieving your management team.'
-        ));
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+        console.error('FETCH_TEAM_ROSTER_ERROR: Failed to fetch mosque team roster', { context: errorContext, error: err });
+        next(new AppError(isDev ? err.message : 'Something went wrong while retrieving your management team.'));
     }
 };
 
@@ -131,12 +119,6 @@ export const removeAdminAssistant = async (req, res, next) => {
         const { mosqueId, targetUserId } = req.query;
         const currentUserId = req.user.id; 
 
-        // Debug logging to see exactly what arrives at your terminal
-        console.log("RECEIVED QUERY PARAMS:", { mosqueId, targetUserId });
-
-        if (!mosqueId || !targetUserId) {
-            return next(new AppError('Missing required mosqueId or targetUserId parameters.', 400));
-        }
 
         // 1. Authorization Check: Verify the requester is the primary OWNER of this mosque
         const requesterAccess = await MosqueAdmin.findOne({
@@ -181,11 +163,8 @@ export const removeAdminAssistant = async (req, res, next) => {
         });
 
     } catch (err) {
-        console.error('Error removing assistant admin:', err);
-        next(new AppError(
-            process.env.NODE_ENV === 'development' 
-                ? err.message 
-                : 'An error occurred while revoking management privileges from the database.'
-        ));
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.query?.email && { email: req.query.email }) };
+        console.error('REMOVE_ADMIN_ASSISTANT_ERROR: Failed to remove assistant admin', { context: errorContext, error: err });
+        next(new AppError(isDev ? err.message : 'An error occurred while revoking management privileges from the database.'));
     }
 };

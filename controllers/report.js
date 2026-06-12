@@ -1,6 +1,10 @@
 import {Report, Mosque, User} from '../models/relationship.js'
 import AppError from '../utils/AppError.js';
 import sendEmail from '../utils/sendEmail.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
 
 export const createReport = async (req, res, next) => {
@@ -39,7 +43,9 @@ export const createReport = async (req, res, next) => {
             data: { report }
         });
     } catch (err) {
-        next(err);
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.body?.email && { email: req.body.email }) };
+        console.error('CREATE_REPORT_ERROR: Failed to create report', { context: errorContext, error: err });
+        next(new AppError(isDev ? err.message : 'Failed to create report', 500));
     }
 };
 
@@ -47,9 +53,7 @@ export const createReport = async (req, res, next) => {
 
 export const getAllReports = async (req, res, next) => {
     try {
-        // 1. Sanitize pagination inputs
-        const limit = Math.min(parseInt(req.query.limit, 1) || 5, 50); // Cap at 50
-        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);    // Minimum page 1
+        const { page, limit } = req.query; // Joi-validated integers
         const offset = (page - 1) * limit;
 
         // 2. Fetch using only the Report table (High Performance)
@@ -70,13 +74,9 @@ export const getAllReports = async (req, res, next) => {
             data: { reports }
         });
     } catch (err) {
-        // Log the error for backend debugging
-        console.error("FULL REPORT ERROR:", err); 
-        
-        return next(new AppError(
-            process.env.NODE_ENV === 'development' ? err.message : 'Failed to retrieve reports.', 
-            500
-        ));
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+        console.error('GET_ALL_REPORTS_ERROR: Failed to fetch reports', { context: errorContext, error: err });
+        return next(new AppError(isDev ? err.message : 'Failed to retrieve reports.', 500));
     }
 };
 
@@ -121,8 +121,9 @@ export const resolveReport = async (req, res, next) => {
         });
 
     } catch (err) { 
-        console.error("RESOLVE REPORT ERROR:", err.message);
-        next(err);
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+        console.error('RESOLVE_REPORT_ERROR: Failed to resolve report', { context: errorContext, error: err });
+        next(new AppError(isDev ? err.message : 'Failed to resolve report', 500));
     }
 };
 

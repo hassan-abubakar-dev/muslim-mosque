@@ -2,14 +2,16 @@ import {Announcement, Mosque, User, Notification} from '../models/relationship.j
 import AppError from '../utils/appError.js';
 import cloudinary from '../config/claudinary.js';
 import sequelize from '../config/db.js';
+import dbConnection from '../config/db.js';
 
 const isDev = process.env.NODE_ENV === 'development';
 
 export const createAnnouncement = async (req, res, next) => {
+    const transaction = await dbConnection.transaction();
     try {
         const { mosqueId } = req.params;
         const { title, content, imageUrl, publicId } = req.body;
-        // const adminId = req.user.id; // From your auth middleware
+      
 
         // Basic verification: does mosque exist?
         const mosque = await Mosque.findByPk(mosqueId);
@@ -17,7 +19,7 @@ export const createAnnouncement = async (req, res, next) => {
             return next(new AppError('Mosque not found', 404));
         }
 
-        // Logic: Save image data ONLY if both fields are provided, else NULL
+        
         const announcementData = {
             title,
             content,
@@ -26,20 +28,19 @@ export const createAnnouncement = async (req, res, next) => {
             publicId: (imageUrl && publicId) ? publicId : null,
         };
 
-        const newAnnouncement = await Announcement.create(announcementData);
+        const newAnnouncement = await Announcement.create(announcementData, { transaction });
     
  
-         try {
-             notification = await Notification.create({
+     
+            const notification = await Notification.create({
                 mosqueId,
                 message: `New announcement added: ${title}`,
                 type: 'announcement',
                 announcementId: newAnnouncement.id
-              });
-            }
-            catch (error) {
-              console.error("Error creating notification:", error);
-            }
+              }, {transaction});
+   
+
+            await transaction.commit();
 
         res.status(201).json({
             status: 'success',
@@ -47,7 +48,14 @@ export const createAnnouncement = async (req, res, next) => {
         });
 
     } catch (err) {
-        console.error('create announcement error', err)
+        if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
+        const errorContext = {
+            url: req.originalUrl,
+            method: req.method,
+            ip: req.ip,
+            ...(req.body?.email && { email: req.body.email }),
+        };
+        console.error('CREATE_ANNOUNCEMENT_ERROR: Failed to create announcement', { context: errorContext, error: err });
         next(new AppError(isDev ? err.message : 'fail to create announcement', 500));
     }
 };
@@ -63,22 +71,15 @@ export const deleteAnnouncement = async (req, res, next) => {
             return next(new AppError('Announcement not found', 404));
         }
 
-        // Authorization check (Ensure this admin owns the mosque linked to the announcement)
-        // [Add your auth logic here if needed]
-
-        // --- STEP A: Clear Space on Cloudinary ---
-        // If this announcement had an image, use the public_id to destroy it on Cloudinary
         if (announcement.publicId) {
             try {
-                // 'destroy' removes the remote asset permanently freeing your storage quota
                 await cloudinary.uploader.destroy(announcement.publicId);
             } catch (cloudErr) {
-                // We log but don't block deletion. If it fails, manual review is needed.
                 console.error('Failed to delete asset from Cloudinary:', announcement.publicId, cloudErr);
             }
         }
 
-        // --- STEP B: Delete from Database ---
+        //delete from db
         await announcement.destroy();
 
         res.status(200).json({
@@ -87,19 +88,25 @@ export const deleteAnnouncement = async (req, res, next) => {
         });
 
     } catch (err) {
-        console.error('delete announcement error', err)
+        const errorContext = {
+            url: req.originalUrl,
+            method: req.method,
+            ip: req.ip,
+            ...(req.body?.email && { email: req.body.email }),
+        };
+        console.error('DELETE_ANNOUNCEMENT_ERROR: Failed to delete announcement', { context: errorContext, error: err });
         next(new AppError(isDev ? err.message : 'fail to delete announcement', 500));
     }
 };
 
 
-// 3. Get Mosque Announcements (With optimized fetch strategy)
+
 export const getAnnouncements = async (req, res, next) => {
     try {
         const { mosqueId } = req.params;
         // Parse page and limit from query string, defaults to page 1, 10 items per page
         const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
+        const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
         const offset = (page - 1) * limit;
 
         // Verify mosque exists
@@ -126,7 +133,13 @@ export const getAnnouncements = async (req, res, next) => {
         });
 
     } catch (err) {
-        console.error('get announcement error', err);
+        const errorContext = {
+            url: req.originalUrl,
+            method: req.method,
+            ip: req.ip,
+            ...(req.body?.email && { email: req.body.email }),
+        };
+        console.error('GET_ANNOUNCEMENTS_ERROR: Failed to fetch announcements', { context: errorContext, error: err });
         next(new AppError(isDev ? err.message : 'Failed to get announcements', 500));
     }
 };

@@ -11,6 +11,8 @@ import sendEmail from '../utils/sendEmail.js';
 import jwt from 'jsonwebtoken';
 dotenv.config();
 
+const isDev =  process.env.NODE_ENV === "development";
+
 export const registerUser = async (req, res, next) => {
   const transaction = await dbConnection.transaction();
 
@@ -50,7 +52,7 @@ export const registerUser = async (req, res, next) => {
       <h3>${verificationCode}</h3>
     `;
 
-    // 🚨 IMPORTANT: EMAIL MUST FAIL → THROW ERROR
+    // IMPORTANT: EMAIL MUST FAIL → THROW ERROR
     await sendEmail({
       to: email,
       subject: "Verify your account",
@@ -66,18 +68,18 @@ export const registerUser = async (req, res, next) => {
     });
 
   } catch (err) {
-    await transaction.rollback();
+    if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
 
-    console.error("REGISTER ERROR:", err.message);
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
 
-    return next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Something went wrong",
-        500
-      )
-    );
+    console.error("REGISTER_USER_ERROR: Failed to register user", { context: errorContext, error: err });
+
+    return next(new AppError(isDev ? err.message : "Something went wrong", 500));
   }
 };
 
@@ -120,7 +122,13 @@ export const requestNewVerificationCode = async (req, res, next) => {
     } catch (emailErr) {
       // rollback verification code if email fails
       await VerificationCode.destroy({ where: { userEmail: email } });
-
+      const errorContext = {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+        ...(req.body?.email && { email: req.body.email }),
+      };
+      console.error("REQUEST_NEW_VERIFICATION_CODE_EMAIL_ERROR: Failed to send verification email", { context: errorContext, error: emailErr });
       return next(new AppError("Failed to send email. Try again.", 500));
     }
 
@@ -129,9 +137,15 @@ export const requestNewVerificationCode = async (req, res, next) => {
       message: `Check your email, ${user.firstName}`,
     });
 
-  } catch (error) {
-    console.error(error);
-    next(new AppError(error.message, 500));
+  } catch (err) {
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error("REQUEST_NEW_VERIFICATION_CODE_ERROR: Failed to request new verification code", { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : 'Something went wrong', 500));
   }
 };;
 
@@ -178,9 +192,15 @@ export const loginUser = async(req, res, next) => {
             user: payload
         })
            
-    }catch(err){
-        console.error(err.message);
-        next(new AppError(process.env.NODE_ENV === 'development' ? err.message : 'something went wrong', 500))
+    } catch (err) {
+      const errorContext = {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+        ...(req.body?.email && { email: req.body.email }),
+      };
+      console.error("LOGIN_USER_ERROR: Failed to login user", { context: errorContext, error: err });
+      next(new AppError(isDev ? err.message : 'something went wrong', 500));
     }
 };
 
@@ -216,9 +236,14 @@ console.log('refreshToken', refreshToken);
             });
         });
     }
-    catch (error) {
-        console.error(error);
-        next(new AppError(error.message, 500));
+    catch (err) {
+      const errorContext = {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+      };
+      console.error("REQUEST_NEW_ACCESS_TOKEN_ERROR: Failed to generate new access token", { context: errorContext, error: err });
+      next(new AppError(err.message, 500));
     };
 };
 
@@ -245,9 +270,13 @@ export const logOutUser = async (req, res, next) => {
         });
     }
     catch (err) {
-        console.error(err);
-        next(new AppError(process.env.NODE_ENV === 'development'
-                ? err.message : 'something went wrong', 400));
+      const errorContext = {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+      };
+      console.error("LOGOUT_USER_ERROR: Failed to log out user", { context: errorContext, error: err });
+      next(new AppError(isDev ? err.message : 'something went wrong', 400));
     };
 };
 
@@ -298,17 +327,15 @@ export const changeUserPassword = async (req, res, next) => {
     });
 
   } catch (err) {
-    await transaction.rollback();
-    console.error("CHANGE PASSWORD ERROR:", err.message);
-
-    return next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "An error occurred while updating security records",
-        500
-      )
-    );
+    if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error("CHANGE_PASSWORD_ERROR: Failed to change user password", { context: errorContext, error: err });
+    return next(new AppError(isDev ? err.message : "An error occurred while updating security records", 500));
   }
 };
 
@@ -318,11 +345,6 @@ export const forgotPassword = async (req, res, next) => {
 
   try {
     const { email } = req.body;
-
-    if (!email) {
-      await transaction.rollback();
-      return next(new AppError("Please provide an email address", 400));
-    }
 
     // 1. Audit check: Ensure user exists AND is fully verified/activated
     const user = await User.findOne({ 
@@ -390,36 +412,28 @@ export const forgotPassword = async (req, res, next) => {
 
   } catch (err) {
     // Revert all structural database state mutations if an exception drops out of flight
-    await transaction.rollback();
-
-    console.error("FORGOT PASSWORD ERROR:", err.message);
-
-    return next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Something went wrong inside our messaging routing hub",
-        500
-      )
-    );
+    if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error("FORGOT_PASSWORD_ERROR: Failed to initiate password recovery", { context: errorContext, error: err });
+    return next(new AppError(isDev ? err.message : "Something went wrong inside our messaging routing hub", 500));
   }
 };
 
 
 export const resetPassword = async (req, res, next) => {
-    // 1. Establish an isolated database transaction pool
+    //  Establish an isolated database transaction pool
     const transaction = await dbConnection.transaction();
 
     try {
         const { password, token } = req.body;
 
-        // 2. Structural Content Check
-        if (!password || !token) {
-            await transaction.rollback();
-            return next(new AppError("Missing new password payload or reset authorization token.", 400));
-        }
 
-        // 3. Cryptographic Token Validation Check
+        //  Cryptographic Token Validation Check
         let decoded;
         try {
             // 🛡️ Decodes using your exact dedicated password reset secret key configuration
@@ -429,14 +443,14 @@ export const resetPassword = async (req, res, next) => {
             return next(new AppError("Your reset session has expired or is invalid. Please request a new code.", 401));
         }
 
-        // 4. Strict Scope/Intent Validation Guardrail
+        //  Strict Scope/Intent Validation Guardrail
         // Confirms this is genuinely a reset token and not a standard stolen access/refresh token
         if (decoded.purpose !== "password_reset") {
             await transaction.rollback();
             return next(new AppError("Invalid token purpose authorization mapping.", 403));
         }
 
-        // 5. Extract target account instance within the active transaction context
+        // Extract target account instance within the active transaction context
         const user = await User.findOne({ 
             where: { 
                 id: decoded.id, 
@@ -451,32 +465,33 @@ export const resetPassword = async (req, res, next) => {
             return next(new AppError("The user account matching this recovery session could not be found.", 404));
         }
 
-        // 6. Securely hash the incoming new raw text password string
-        // 12 salt rounds balancing server CPU protection against brute-force resistance
+        //  Securely hash the incoming new raw text password string
+        // salt rounds balancing server CPU protection against brute-force resistance
         const hashedPassword = await bcrypt.hash(password, 12);
 
-        // 7. Update model properties and record state updates directly
+        //  Update model properties and record state updates directly
         user.password = hashedPassword;
         await user.save({ transaction });
 
-        // 8. Safely commit all structural changes to the database engine
+        //  Safely commit all structural changes to the database engine
         await transaction.commit();
 
-        // 9. Return absolute confirmation to the frontend client application
+        //  Return absolute confirmation to the frontend client application
         return res.status(200).json({
             status: "success",
             message: "Your Masjiba account password has been updated successfully."
         });
 
     } catch (err) {
-        // Safe database transaction fallback recovery path
-        await transaction.rollback();
-        console.error("RESET PASSWORD CONTROLLER ERROR:", err.message);
-        return next(
-            new AppError(
-                process.env.NODE_ENV === "development" ? err.message : "Something went wrong resetting your password.", 
-                500
-            )
-        );
+      // Safe database transaction fallback recovery path
+      if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
+      const errorContext = {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+        ...(req.body?.email && { email: req.body.email }),
+      };
+      console.error("RESET_PASSWORD_ERROR: Failed to reset password", { context: errorContext, error: err });
+      return next(new AppError(isDev ? err.message : "Something went wrong resetting your password.", 500));
     }
 };

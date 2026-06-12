@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 import getLikeOperator from "../utils/dbHelpers.js";
 
 dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
 
 export const getLoggedInUser = async (req, res, next) => {
@@ -41,10 +42,9 @@ export const getLoggedInUser = async (req, res, next) => {
             user
         });
     } catch (err) {
-        console.error(err);
-        next(new AppError(process.env.NODE_ENV === 'development' 
-            ? err.message : 'some thing went wrong try again'
-        ));
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+        console.error('GET_LOGGED_IN_USER_ERROR: Failed to fetch logged in user', { context: errorContext, error: err });
+        next(new AppError(isDev ? err.message : 'some thing went wrong try again', 500));
     }
 };
 
@@ -97,12 +97,9 @@ export const searchUserByEmail = async (req, res, next) => {
         });
 
     } catch (err) {
-        console.error('Email search error:', err);
-        next(new AppError(
-            process.env.NODE_ENV === 'development' 
-                ? err.message 
-                : 'Something went wrong during the user lookup process.'
-        ));
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.body?.email && { email: req.body.email }) };
+        console.error('SEARCH_USER_BY_EMAIL_ERROR: Failed to search user by email', { context: errorContext, error: err });
+        next(new AppError(isDev ? err.message : 'Something went wrong during the user lookup process.', 500));
     }
 };
 
@@ -173,16 +170,9 @@ export const updateUserInfo = async (req, res, next) => {
 
   } catch (err) {
     await transaction.rollback();
-    console.error("UPDATE INFO ERROR:", err.message);
-
-    return next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Something went wrong while saving adjustments",
-        500
-      )
-    );
+    const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.body?.email && { email: req.body.email }) };
+    console.error('UPDATE_USER_INFO_ERROR: Failed to update user info', { context: errorContext, error: err });
+    return next(new AppError(isDev ? err.message : "Something went wrong while saving adjustments", 500));
   }
 };
 
@@ -192,10 +182,8 @@ export const updateUserInfo = async (req, res, next) => {
 export const getAllVerifiedUsers = async (req, res, next) => {
     try {
         // 1. Extract pagination and search params
-        const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 10;
+       const { page, limit, search: searchTerm } = req.query; 
         const offset = (page - 1) * limit;
-        const searchTerm = req.query.search;
 
         // 2. Build filter conditions
         const whereClause = { isVerify: true };
@@ -247,8 +235,9 @@ export const getAllVerifiedUsers = async (req, res, next) => {
         });
 
     } catch (err) {
-        console.error('Fetch all users error:', err);
-        return next(new AppError('Failed to retrieve user directory.', 500));
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+        console.error('GET_ALL_VERIFIED_USERS_ERROR: Failed to fetch verified users', { context: errorContext, error: err });
+        return next(new AppError(isDev ? err.message : 'Failed to retrieve user directory.', 500));
     }
 };
 
@@ -286,8 +275,9 @@ export const toggleUserRole = async (req, res, next) => {
     } catch (err) {
         // 4. Rollback on any error
         if (transaction) await transaction.rollback();
-        console.error('Toggle role error:', err);
-        return next(new AppError('Failed to update user role.', 500));
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+        console.error('TOGGLE_USER_ROLE_ERROR: Failed to toggle user role', { context: errorContext, error: err });
+        return next(new AppError(isDev ? err.message : 'Failed to update user role.', 500));
     }
 };
 
@@ -342,13 +332,8 @@ export const deleteAccount = async (req, res, next) => {
 
     } catch (err) {
         if (t) await t.rollback();
-        
-        console.error('Account deletion error:', err);
-        next(new AppError(
-            process.env.NODE_ENV === 'development' 
-            ? err.message 
-            : 'Failed to delete account. Please try again.', 
-            500
-        ));
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+        console.error('DELETE_ACCOUNT_ERROR: Failed to delete account', { context: errorContext, error: err });
+        next(new AppError(isDev ? err.message : 'Failed to delete account. Please try again.', 500));
     }
 };

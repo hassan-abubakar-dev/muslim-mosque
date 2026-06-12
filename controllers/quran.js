@@ -22,6 +22,8 @@ export const getAllSurahs = (req, res, next) => {
     data: surahsList
   });
     } catch (error) {
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+        console.error('GET_ALL_SURAHS_ERROR: Failed to fetch all surahs', { context: errorContext, error });
         return next(new AppError(isDev ? error.message : "Internal server error", 500));
     }
 };
@@ -51,6 +53,8 @@ export const getSurahById = (req, res, next) => {
     });
 
   } catch (error) {
+    const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+    console.error('GET_SURAH_BY_ID_ERROR: Failed to fetch surah by id', { context: errorContext, error });
     return next(new AppError(isDev ? error.message : "Internal server error", 500));
   }
 };
@@ -60,9 +64,6 @@ export const getSurahVerses = (req, res, next) => {
     const { id } = req.params;
     let { page = 1, limit = 20 } = req.query;
 
-    page = parseInt(page);
-    limit = parseInt(limit);
-    console.log(`Fetching verses for Surah ID: ${id}, Page: ${page}, Limit: ${limit}`);
 
     const surah = quran.find(s => s.id == id);
 

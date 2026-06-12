@@ -4,6 +4,7 @@ import UserProfile from "../models/userProfile.js";
 import dbConnection from "../config/db.js";
 import cloudinary from "../config/claudinary.js";
 dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
 export const getUserProfile = async(req, res, next) => {
     try{
@@ -20,9 +21,9 @@ export const getUserProfile = async(req, res, next) => {
         });
     }
     catch(err){
-        next(new AppError(process.env.NODE_ENV === 'development' 
-            ? err.message : 'some thing went wrong while fetching profile'
-        ));
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+        console.error('GET_USER_PROFILE_ERROR: Failed to fetch user profile', { context: errorContext, error: err });
+        next(new AppError(isDev ? err.message : 'some thing went wrong while fetching profile', 500));
     }
 };
 
@@ -33,11 +34,6 @@ export const updateUserProfile = async (req, res, next) => {
     const userId = req.user.id;
 
     const { imageUrl, publicId } = req.body;
-
-    if (!imageUrl || !publicId) {
-      await transaction.rollback();
-      return next(new AppError("Image URL and publicId are required", 400));
-    }
 
     const userProfile = await UserProfile.findOne({
       where: { userId },
@@ -71,15 +67,9 @@ export const updateUserProfile = async (req, res, next) => {
     });
   } catch (err) {
     await transaction.rollback();
-
-    next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Something went wrong while updating profile",
-        500
-      )
-    );
+    const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.body?.email && { email: req.body.email }) };
+    console.error('UPDATE_USER_PROFILE_ERROR: Failed to update user profile', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : "Something went wrong while updating profile", 500));
   }
 };
 

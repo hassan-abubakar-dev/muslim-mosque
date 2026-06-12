@@ -4,6 +4,10 @@ import {Bookmark, Lecture, Mosque} from '../models/relationship.js';
 import AppError from '../utils/appError.js';
 import { Op } from 'sequelize';
 import getLikeOperator from '../utils/dbHelpers.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
 // 1. Toggle Bookmark (Add or Remove)
 export const toggleBookmark = async (req, res, next) => {
@@ -47,7 +51,14 @@ export const toggleBookmark = async (req, res, next) => {
             data: newBookmark
         });
     } catch (err) {
-        next(err);
+      const errorContext = {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+        ...(req.body?.email && { email: req.body.email }),
+      };
+      console.error('TOGGLE_BOOKMARK_ERROR: Failed to toggle bookmark', { context: errorContext, error: err });
+      next(new AppError(isDev ? err.message : 'Internal server error', 500));
     }
 };
 
@@ -118,6 +129,13 @@ export const getBookmarks = async (req, res, next) => {
       data: { bookmarks: formattedBookmarks }
     });
   } catch (err) {
-    next(err);
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error('GET_BOOKMARKS_ERROR: Failed to fetch bookmarks', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : 'Internal server error', 500));
   }
 };

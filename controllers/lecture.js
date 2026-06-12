@@ -10,6 +10,7 @@ import { Op } from "sequelize";
 import getLikeOperator from "../utils/dbHelpers.js";
 
 dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
 
 // Save lecture metadata to database
@@ -19,19 +20,7 @@ export const saveLectureMetadata = async (req, res, next) => {
     const { title, type, key, duration, url, thumbnail, videoId, mosqueId } = req.body;
     console.log(mosqueId, 'lecture controller mosque id')
 
-    // 1. Basic Category Check
-    if (!categoryId) {
-      return next(new AppError("Category ID is required", 400));
-    }
-
-    // 2. Title is required for both audio and video
-    if (!title) {
-      return next(new AppError("Title is required", 400));
-    }
-
-  if (!mosqueId) {
-  return next(new AppError("Mosque ID is required for notification distribution", 400));
-}
+// all checks goes to validation joi
 
     // Verify category exists
     const category = await Category.findByPk(categoryId);
@@ -100,16 +89,14 @@ export const saveLectureMetadata = async (req, res, next) => {
     });
 
   } catch (err) {
-    console.error("Error saving lecture metadata:", err);  
-
-    next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Failed to save lecture metadata",
-        500
-      )
-    )
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error('SAVE_LECTURE_METADATA_ERROR: Failed to save lecture metadata', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : 'Failed to save lecture metadata', 500));
   }
 };
 
@@ -118,10 +105,6 @@ export const saveLectureMetadata = async (req, res, next) => {
 export const deleteLecture = async (req, res, next) => {
   try {
     const id = req.params.lectureId;
-
-    if (!id) {
-      return next(new AppError("Lecture id is required", 400));
-    }
 
     const lecture = await Lecture.findByPk(id);
 
@@ -134,14 +117,13 @@ export const deleteLecture = async (req, res, next) => {
       try {
         await deleteFileFromR2(lecture.publicId);
       } catch (error) {
-        return next(
-          new AppError(
-            process.env.NODE_ENV === "development"
-              ? error.message
-              : "Failed to delete lecture file from storage",
-            500
-          )
-        );
+        const errorContext = {
+          url: req.originalUrl,
+          method: req.method,
+          ip: req.ip,
+        };
+        console.error('DELETE_LECTURE_FILE_ERROR: Failed to delete lecture file from storage', { context: errorContext, error });
+        return next(new AppError(isDev ? error.message : 'Failed to delete lecture file from storage', 500));
       }
     }
 
@@ -154,16 +136,14 @@ export const deleteLecture = async (req, res, next) => {
     });
 
   } catch (err) {
-    console.error("Delete lecture error:", err.message);
-
-    next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Something went wrong",
-        500
-      )
-    );
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error('DELETE_LECTURE_ERROR: Failed to delete lecture', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : 'Something went wrong', 500));
   }
 };
 
@@ -171,7 +151,6 @@ export const deleteLecture = async (req, res, next) => {
 export const getLectures = async (req, res, next) => {
   try {
     const { categoryId } = req.params;
-    if (!categoryId) return next(new AppError("Category ID is required", 400));
 
     const category = await Category.findByPk(categoryId);
     if (!category) return next(new AppError("Category not found", 404));
@@ -181,8 +160,6 @@ export const getLectures = async (req, res, next) => {
 
     page = parseInt(page);
     limit = parseInt(limit);
-    if (isNaN(page) || page < 1) page = 1;
-    if (isNaN(limit) || limit < 1) limit = 10; // Fixed from 2 back to 10
     const offset = (page - 1) * limit;
 
     // 2. Build the WHERE clause
@@ -224,7 +201,14 @@ export const getLectures = async (req, res, next) => {
     });
 
   } catch (err) {
-    next(new AppError(err.message, 500));
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error('GET_LECTURES_ERROR: Failed to fetch lectures', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : 'Something went wrong', 500));
   }
 };
 
@@ -232,9 +216,6 @@ export const getLectureCount = async (req, res, next) => {
     try {
         const { categoryId } = req.params;
         
-        if (!categoryId) {
-            return next(new AppError('category id is required', 400));
-        }
 
         // Count only where categoryId matches
         const count = await Lecture.count({ 
@@ -246,7 +227,12 @@ export const getLectureCount = async (req, res, next) => {
             count
         });
     } catch (err) {
-        console.error('Error fetching lecture count:', err.message);
-        next(new AppError(process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong', 500));
+      const errorContext = {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+      };
+      console.error('GET_LECTURE_COUNT_ERROR: Failed to fetch lecture count', { context: errorContext, error: err });
+      next(new AppError(isDev ? err.message : 'Something went wrong', 500));
     }
 };

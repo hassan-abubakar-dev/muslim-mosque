@@ -1,20 +1,28 @@
+const validate = (schema, property = 'body') => {
+  return (req, res, next) => {
+    const { error, value } = schema.validate(req[property], {
+      abortEarly: false,
+      stripUnknown: true,
+    });
 
-const validate = (schema) => {
-    return (req, res, next) => {
-        const { error } = schema.validate(req.body, {
-            abortEarly: false,
-        });
-        
-        if(error) {
-            const errorMessages = error.details.map(detail => detail.message).join(', ');
-            return res.status(400).json({
-                status: 'fail',
-                message: errorMessages,
-            });
-        }
-        
-        next();
+    if (error) {
+      const message = error.details.map((i) => i.message).join(', ');
+      return next(new AppError(message, 400));
     }
-}
+
+    // FIX: Mutate existing object properties instead of overwriting the object
+    if (req[property] && typeof req[property] === 'object') {
+      // Clear existing keys to remove "unknown" or invalid data
+      Object.keys(req[property]).forEach(key => delete req[property][key]);
+      
+      // Assign the sanitized/coerced values back into the existing object
+      Object.assign(req[property], value);
+    } else {
+      req[property] = value;
+    }
+    
+    next();
+  };
+};
 
 export default validate;

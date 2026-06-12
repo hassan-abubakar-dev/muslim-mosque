@@ -20,6 +20,13 @@ export const getAllAdzkar = (req, res, next) => {
             data: adzkarList
         });
     } catch (err) {
+        const errorContext = {
+            url: req.originalUrl,
+            method: req.method,
+            ip: req.ip,
+            ...(req.body?.email && { email: req.body.email }),
+        };
+        console.error("GET_ALL_ADZKAR_ERROR: Failed to fetch adzkar list", { context: errorContext, error: err });
         next(new AppError(isDev ? err.message : 'Internal server error', 500));
     }
 };  

@@ -9,6 +9,7 @@ import performCategoryCleanup from "../service/category.js";
 
 
 dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
 
 export const createCategory = async (req, res, next) => {
@@ -19,21 +20,7 @@ export const createCategory = async (req, res, next) => {
     const { name, teacherName, information, imageUrl, publicId } = req.body;
     const { mosqueId } = req.params;
 
-    if (!mosqueId) {
-      await transaction.rollback();
-      return next(new AppError("mosque id is required", 400));
-    }
-
-    const existingCategory = await Category.findOne({
-      where: { mosqueId, name, teacherName }
-    });
-
-    if (existingCategory) {
-      await transaction.rollback();
-      return next(
-        new AppError("Category with this name and teacher already exists", 400)
-      );
-    }
+// existing category checked by db using index
 
     // 2. Create the Category
     const newCategory = await Category.create(
@@ -70,14 +57,15 @@ export const createCategory = async (req, res, next) => {
     });
 
   } catch (err) {
-    await transaction.rollback();
-    console.error(err);
-    next(
-      new AppError(
-        process.env.NODE_ENV === "development" ? err.message : "Something went wrong",
-        500
-      )
-    );
+    if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error('CREATE_CATEGORY_ERROR: Failed to create category', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : "Something went wrong", 500));
   }
 };
 
@@ -90,10 +78,7 @@ export const updateCategory = async (req, res, next) => {
 
   try {
     const { id } = req.params;
-    if (!id) {
-      await transaction.rollback();
-      return next(new AppError("category id required", 400));
-    }
+ 
 
     // 1. Destructure the new Cloudinary fields
     const { name, teacherName, information, imageUrl, publicId } = req.body;
@@ -104,21 +89,8 @@ export const updateCategory = async (req, res, next) => {
       return next(new AppError("Category not found", 404));
     }
 
-    // 2. Prevent duplicates
-    const existingCategory = await Category.findOne({
-      where: {
-        name: name || category.name,
-        teacherName: teacherName || category.teacherName,
-        id: { [Op.not]: id },
-      },
-    });
-
-    if (existingCategory) {
-      await transaction.rollback();
-      return next(
-        new AppError("Category with this name and teacher already exists", 400)
-      );
-    }
+    // 2. Prevent duplicates by db index field
+   
 
     // 3. Update Category fields
     await category.update(
@@ -171,17 +143,15 @@ export const updateCategory = async (req, res, next) => {
       category,
     });
   } catch (err) {
-    await transaction.rollback();
-    console.error(err);
-
-    next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Something went wrong",
-        500
-      )
-    );
+    if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error('UPDATE_CATEGORY_ERROR: Failed to update category', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : "Something went wrong", 500));
   }
 };
 
@@ -193,8 +163,15 @@ export const deleteCategory = async (req, res, next) => {
     await transaction.commit();
     res.status(200).json({ success: true, message: "Category deleted successfully" });
   } catch (err) {
-    await transaction.rollback();
-    next(new AppError(err.message, 500));
+    if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error('DELETE_CATEGORY_ERROR: Failed to delete category', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : 'Something went wrong', 500));
   }
 };
 
@@ -222,8 +199,14 @@ export const getAllCategories = async (req, res, next) => {
             categories
         });
     } catch (err) {
-        console.error(err.message);
-        next(new AppError(process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong', 500));
+      const errorContext = {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+        ...(req.body?.email && { email: req.body.email }),
+      };
+      console.error('GET_ALL_CATEGORIES_ERROR: Failed to fetch categories', { context: errorContext, error: err });
+      next(new AppError(isDev ? err.message : 'Something went wrong', 500));
     }
 };
 

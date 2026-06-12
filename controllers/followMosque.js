@@ -1,15 +1,16 @@
 import Mosque from "../models/mosque.js";
 import FollowMosque from "../models/followMosque.js";
 import AppError from "../utils/AppError.js";
+import dotenv from 'dotenv';
+
+dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
 export const toggleFollowMosque = async (req, res, next) => {
   try {
     const { mosqueId } = req.params;
     const userId = req.user?.id;
 
-    if (!userId) {
-      return next(new AppError("Unauthorized access", 401));
-    } 
 
     const mosque = await Mosque.findByPk(mosqueId);
     if (!mosque) {
@@ -38,14 +39,13 @@ export const toggleFollowMosque = async (req, res, next) => {
       mosqueId
     });
   } catch (err) {
-    console.error(err.message || err);
-    next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Something went wrong",
-        500
-      )
-    );
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error('TOGGLE_FOLLOW_MOSQUE_ERROR: Failed to toggle mosque follow', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : "Something went wrong", 500));
   }
 };

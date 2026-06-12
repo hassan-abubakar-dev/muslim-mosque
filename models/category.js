@@ -27,7 +27,13 @@ const Category = dbConnection.define('Category', {
     {
         tableName: 'categories',
         timestamps: true,
-        underscored: true
+        underscored: true,
+        indexes: [
+        {
+            unique: true,
+            fields: ['name', 'teacher_name', 'mosque_id']// This prevents exact duplicates per mosque
+        }
+    ]
     }
 );
 

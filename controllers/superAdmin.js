@@ -4,6 +4,11 @@ import  User  from '../models/User.js';
 import Mosque  from '../models/Mosque.js';
 import  Report from '../models/Report.js';
 import  Feedback  from '../models/Feedback.js';
+import AppError from '../utils/AppError.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
 export const getDashboardStats = async (req, res, next) => {
     try {
@@ -45,6 +50,8 @@ export const getDashboardStats = async (req, res, next) => {
             }
         });
     } catch (err) {
-        next(err);
+        const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+        console.error('GET_DASHBOARD_STATS_ERROR: Failed to fetch dashboard statistics', { context: errorContext, error: err });
+        next(new AppError(isDev ? err.message : 'Failed to fetch dashboard statistics', 500));
     }
 };

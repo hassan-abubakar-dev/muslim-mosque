@@ -3,6 +3,9 @@
 .env.local
 .env.*.local
 
+# Sensitive files and scripts
+scripts/superAdmin.js
+
 # Node modules
 node_modules/
 npm-debug.log

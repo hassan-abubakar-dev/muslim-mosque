@@ -1,34 +1,25 @@
 import Joi from 'joi';
 
 export const createCategorySchema = Joi.object({
-  name: Joi.string().trim().required().messages({
-    'string.empty': 'Category name is not empty',
-    'any.required': 'Category name is required'
-  }),
-  teacherName: Joi.string().trim().required().messages({
-    'string.empty': 'Teacher name is not empty',
-    'any.required': 'Teacher name is required'
-  }),
-  information: Joi.string().trim().optional().allow('').messages({
-    'string.base': 'Information must be a string'
-  })
-}).unknown(true); 
-
+  name: Joi.string().trim().min(2).max(100).required(),
+  teacherName: Joi.string().trim().min(2).max(100).required(),
+  information: Joi.string().trim().max(1000).allow('', null).optional(),
+  imageUrl: Joi.string().uri().optional().allow('', null),
+  publicId: Joi.string().optional().allow('', null)
+});
 
 export const updateCategorySchema = Joi.object({
-  name: Joi.string().trim().optional().messages({
-    'string.base': 'Category name must be a string'
-  }),
+  name: Joi.string().trim().min(2).max(100).optional(),
+  teacherName: Joi.string().trim().min(2).max(100).optional(),
+  information: Joi.string().trim().max(1000).allow('', null).optional(),
+  imageUrl: Joi.string().uri().optional().allow('', null),
+  publicId: Joi.string().optional().allow('', null)
+}).min(1);
 
-  teacherName: Joi.string().trim().optional().messages({
-    'string.base': 'Teacher name must be a string'
-  }),
+export const idParamSchema = Joi.object({
+  id: Joi.string().uuid().required()
+});
 
-  information: Joi.optional().allow('').messages({
-    'string.base': 'Information must be a string'
-  })
-})
-.min(1)
-.messages({
-  'object.min': 'At least one field must be provided for update'
-}).unknown(true);
+export const mosqueIdParamSchema = Joi.object({
+  mosqueId: Joi.string().uuid().required()
+});

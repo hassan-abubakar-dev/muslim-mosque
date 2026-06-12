@@ -3,7 +3,6 @@ import dotenv from 'dotenv';
 
 import dbConnection from './config/db.js';
 import errorHandler from './middleware/errorHandler.js';
-import superAdmin from './config/superAdmin.js';
 import './models/relationship.js'
 import cors from './config/cors.js';
 import authRouter from './routes/auth.js';
@@ -26,41 +25,54 @@ import videoLibraryRouter from './routes/videoLibrary.js';
 import mosqueAdminRouter from './routes/mosqueAdmin.js';
 import reportRouter from './routes/report.js'
 import superAdminRouter from './routes/superAdmin.js';
+import { apiLimiter } from './middleware/rateLimiter.js';
+import security from './config/security.js';
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5000;     
+const PORT = process.env.PORT || 5000;  
+
+app.set('trust proxy', 1);
  
 // Middleware
-
 app.use(express.json()); 
 app.use(cors);        
 app.use(cookieParser());
 
-// Routes
-app.use('/api/auths', authRouter);
-app.use('/api/verifications', verificationRouter);
-app.use('/api/mosques', mosqueRouter);
-app.use('/api/users', userRouter);  
-app.use('/api/profiles', userProfileRouter);
-app.use('/api/profiles', mosqueProfileRouter);  
-app.use('/api/categories', categoryRouter);
-app.use('/api/quran', quranRouter);
-app.use('/api/adzkar', adzkarRouter);
-app.use('/api/lectures', lectureRouter);
-app.use('/api/signed-url', signedUrlRouter);
-app.use('/api/announcements', announcementRouter);
-app.use('/api/feedback', feedbackRouter);
+app.disable('x-powered-by');
+app.use(security); 
+
+
+app.use((req, res, next) => {
+    console.log(`[DEBUG] Incoming request: ${req.method} ${req.url}`);
+    next();
+});
+
+
+
+// Routes 
+app.use('/api/auths', authRouter); //dont pass any limiter because it already has its individaul endpoints limiter at its routes file
+app.use('/api/verifications', verificationRouter); //this i am doubting i think we has to create its own limiter but we will talk on it letter
+app.use('/api/mosques', apiLimiter, mosqueRouter);
+app.use('/api/users', apiLimiter, userRouter);  
+app.use('/api/profiles', apiLimiter, userProfileRouter);
+app.use('/api/profiles', apiLimiter, mosqueProfileRouter);  
+app.use('/api/categories', apiLimiter, categoryRouter);
+app.use('/api/quran', apiLimiter, quranRouter);
+app.use('/api/adzkar', apiLimiter, adzkarRouter);
+app.use('/api/lectures', apiLimiter, lectureRouter);
+app.use('/api/signed-url',apiLimiter, signedUrlRouter);
+app.use('/api/announcements', apiLimiter, announcementRouter);
+app.use('/api/feedback', apiLimiter, feedbackRouter);
 app.use('/api/notifications', notificationRouter);
-app.use('/api/bookmarks', bookmarkRouter);
+app.use('/api/bookmarks', apiLimiter, bookmarkRouter);
 app.use('/api/video-library', videoLibraryRouter);
-app.use('/api/mosque-admin', mosqueAdminRouter);
-app.use('/api/reports', reportRouter);
-app.use('/api/super-admin', superAdminRouter);
+app.use('/api/mosque-admin', apiLimiter, mosqueAdminRouter);
+app.use('/api/reports', apiLimiter, reportRouter);
+app.use('/api/super-admin', apiLimiter, superAdminRouter);
 // Error Handling Middleware
 app.use(errorHandler); 
-
 
 
 (async () => {
@@ -76,7 +88,6 @@ app.use(errorHandler);
       // for production use sync without alter
       await dbConnection.sync(); 
     };
-      await superAdmin();
     console.log("all models sync successfully.");   
 
     } catch (error) {

@@ -6,22 +6,17 @@ import dotenv from 'dotenv';
 import getLikeOperator from '../utils/dbHelpers.js';
 
 dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
-/**
- * @desc    Get all saved videos for the logged-in user's library
- * @route   GET /api/video-library/get-library
- */
 
 
 export const getVideoLibrary = async (req, res, next) => {
   try {
     const userId = req.user.id;
     
-    // 1. Setup Pagination with hard cap
-    const page = Math.max(1, parseInt(req.query.page) || 1);
-    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 10));
+    // get data fro query
+ const { page, limit, search: searchTerm } = req.query;
     const offset = (page - 1) * limit;
-    const searchTerm = (req.query.search || "").trim();
 
     // 2. Define filter
     const lectureWhere = { type: 'video' };
@@ -73,28 +68,18 @@ export const getVideoLibrary = async (req, res, next) => {
       library: formattedLibrary
     });
   } catch (err) {
-    // Development logs are fine, production stays clean
-    if (process.env.NODE_ENV === 'development') console.error(err);
-    return next(new AppError("Failed to retrieve video library.", 500));
+    const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip };
+    console.error('GET_VIDEO_LIBRARY_ERROR: Failed to fetch video library', { context: errorContext, error: err });
+    return next(new AppError(isDev ? err.message : "Failed to retrieve video library.", 500));
   }
 };
 
-/**
- * @desc    Save or Remove a video from the user's library (Toggle system)
- * @route   POST /api/video-library/toggle-save
- */
-/**
- * @desc    Save or Refresh a video in the user's library (Bring-to-top system)
- * @route   POST /api/video-library/toggle-save/:lectureId
- */
+
 export const toggleVideoLibrary = async (req, res, next) => {
   try {
     const userId = req.user.id; // Provided by your auth middleware
     const { lectureId } = req.params; 
 
-    if (!lectureId) {
-      return res.status(400).json({ status: 'error', message: "lectureId is required." });
-    }
 
     // 1. Verify that this lecture actually exists and is a video
     const lecture = await Lecture.findByPk(lectureId);
@@ -130,23 +115,18 @@ export const toggleVideoLibrary = async (req, res, next) => {
     });
 
   } catch (err) {
-    console.error("Error inside toggleVideoLibrary controller:", err.message);
-    return next(new AppError(process.env.NODE_ENV === 'development' ? err.message : "Failed to process video library request.", 500));
+    const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.params?.lectureId && { lectureId: req.params.lectureId }) };
+    console.error('TOGGLE_VIDEO_LIBRARY_ERROR: Failed to toggle video library', { context: errorContext, error: err });
+    return next(new AppError(isDev ? err.message : "Failed to process video library request.", 500));
   }
 };
 
-/**
- * @desc    Explicitly remove a video from the user's library (Called from Library Dashboard)
- * @route   DELETE /api/video-library/remove/:lectureId
- */
+
+
 export const removeFromLibrary = async (req, res, next) => {
   try {
     const userId = req.user.id; 
     const { lectureId } = req.params;
-
-    if (!lectureId) {
-      return res.status(400).json({ status: 'error', message: "lectureId is required." });
-    }
 
     // Find the record in the library container
     const existingSave = await VideoLibrary.findOne({
@@ -169,7 +149,8 @@ export const removeFromLibrary = async (req, res, next) => {
       isSaved: false
     });
   } catch (err) {
-    console.error("Error inside removeFromLibrary controller:", err.message);
-    return next(new AppError(process.env.NODE_ENV === 'development' ? err.message : "Failed to remove item from library.", 500));
+    const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.params?.lectureId && { lectureId: req.params.lectureId }) };
+    console.error('REMOVE_FROM_LIBRARY_ERROR: Failed to remove item from library', { context: errorContext, error: err });
+    return next(new AppError(isDev ? err.message : "Failed to remove item from library.", 500));
   }
 };

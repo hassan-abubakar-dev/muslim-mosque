@@ -1,6 +1,9 @@
 import {Feedback, User} from "../models/relationship.js";
 
-import AppError from "../utils/appError.js";   
+import AppError from "../utils/appError.js";  
+import dotenv from 'dotenv';
+dotenv.config();
+const isDev = process.env.NODE_ENV === 'development';
 
 export const submitFeedback = async (req, res, next) => {
   try {
@@ -13,11 +16,7 @@ export const submitFeedback = async (req, res, next) => {
     // then fallback to the profile email if they are logged in.
     const finalEmail = email || (req.user ? req.user.email : null);
 
-    // 3. Validation
-    if (!message || message.trim().length === 0) {
-       return res.status(400).json({ status: "fail", message: "Message cannot be empty." });
-    }
-
+  
     // 4. Create record
     const newFeedback = await Feedback.create({
       type,
@@ -34,8 +33,14 @@ export const submitFeedback = async (req, res, next) => {
       data: { feedback: newFeedback }
     });
   } catch (err) {
-    // Make sure AppError is defined in your scope
-    next(err); 
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error('SUBMIT_FEEDBACK_ERROR: Failed to submit feedback', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : 'Something went wrong', 500));
   }
 };
 
@@ -75,7 +80,14 @@ export const getAllFeedbacks = async (req, res, next) => {
       },
     });
   } catch (err) {
-    next(new AppError(err.message, 500));
+    const errorContext = {
+      url: req.originalUrl,
+      method: req.method,
+      ip: req.ip,
+      ...(req.body?.email && { email: req.body.email }),
+    };
+    console.error('GET_ALL_FEEDBACKS_ERROR: Failed to fetch feedbacks', { context: errorContext, error: err });
+    next(new AppError(isDev ? err.message : 'Something went wrong', 500));
   }
 };
 
@@ -130,8 +142,14 @@ export const resolveFeedback = async (req, res, next) => {
         });
 
     } catch (err) { 
-        console.error("RESOLVE FEEDBACK ERROR:", err.message);
-        next(err);
+      const errorContext = {
+        url: req.originalUrl,
+        method: req.method,
+        ip: req.ip,
+        ...(req.body?.email && { email: req.body.email }),
+      };
+      console.error('RESOLVE_FEEDBACK_ERROR: Failed to resolve feedback ticket', { context: errorContext, error: err });
+      next(new AppError(isDev ? err.message : 'Something went wrong', 500));
     }
 };
 

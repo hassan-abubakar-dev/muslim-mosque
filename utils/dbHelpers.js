@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import dbConnection from '../config/db';
+import dbConnection from '../config/db.js';
 
 
 // Check if we are using Postgres
