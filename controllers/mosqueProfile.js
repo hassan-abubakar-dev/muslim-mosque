@@ -10,9 +10,13 @@ export const updateMosqueProfile = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    const { imageUrl, publicId } = req.body;
+    const { imageUrl, publicId, metadata } = req.body;
     const {mosqueId} = req.params;
 
+    if (!metadata || metadata.size > 500000 || !metadata.type.startsWith('image/')) {
+        await cloudinary.uploader.destroy(publicId).catch(console.error);
+        return next(new AppError("Invalid image constraints.", 400));
+    }
 
     const mosqueProfile = await MosqueProfile.findOne({
       where: { mosqueId },
@@ -46,6 +50,10 @@ export const updateMosqueProfile = async (req, res, next) => {
       mosqueProfile: mosqueProfile.image,
     });
   } catch (err) {
+    if (req.body.publicId) {
+        await cloudinary.uploader.destroy(req.body.publicId).catch(console.error);
+    };
+    
      const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.query?.email && { email: req.query.email }) };
         console.error('UPDATE_MOSQUE_PROFILE_ERROR: Failed to update mosque profile', { context: errorContext, error: err });
         

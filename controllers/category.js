@@ -17,10 +17,14 @@ export const createCategory = async (req, res, next) => {
   
   try {
     // 1. Destructure the new Cloudinary fields
-    const { name, teacherName, information, imageUrl, publicId } = req.body;
+    const { name, teacherName, information, imageUrl, publicId, metadata } = req.body;
     const { mosqueId } = req.params;
 
-// existing category checked by db using index
+
+    if (imageUrl && (!metadata || metadata.size > 500000 || !metadata.type.startsWith('image/'))) {
+    await cloudinary.uploader.destroy(publicId).catch(console.error);
+    return next(new AppError("Invalid image constraints.", 400));
+}
 
     // 2. Create the Category
     const newCategory = await Category.create(
@@ -57,6 +61,9 @@ export const createCategory = async (req, res, next) => {
     });
 
   } catch (err) {
+    if (req.body.publicId) {
+        await cloudinary.uploader.destroy(req.body.publicId).catch(console.error);
+    }
     if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
     const errorContext = {
       url: req.originalUrl,
@@ -71,8 +78,6 @@ export const createCategory = async (req, res, next) => {
 
 
 
-
-
 export const updateCategory = async (req, res, next) => {
   const transaction = await dbConnection.transaction();
 
@@ -81,7 +86,12 @@ export const updateCategory = async (req, res, next) => {
  
 
     // 1. Destructure the new Cloudinary fields
-    const { name, teacherName, information, imageUrl, publicId } = req.body;
+    const { name, teacherName, information, imageUrl, publicId, metadata } = req.body;
+
+ if (imageUrl && (!metadata || metadata.size > 500000 || !metadata.type.startsWith('image/'))) {
+    await cloudinary.uploader.destroy(publicId).catch(console.error);
+    return next(new AppError("Invalid image constraints.", 400));
+}
 
     const category = await Category.findByPk(id);
     if (!category) {
@@ -143,6 +153,9 @@ export const updateCategory = async (req, res, next) => {
       category,
     });
   } catch (err) {
+     if (req.body.publicId) {
+        await cloudinary.uploader.destroy(req.body.publicId).catch(console.error);
+    }
     if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
     const errorContext = {
       url: req.originalUrl,
@@ -154,7 +167,6 @@ export const updateCategory = async (req, res, next) => {
     next(new AppError(isDev ? err.message : "Something went wrong", 500));
   }
 };
-
 
 export const deleteCategory = async (req, res, next) => {
   const transaction = await dbConnection.transaction();

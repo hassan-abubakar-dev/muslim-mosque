@@ -6,5 +6,11 @@ export const updateProfileParamsSchema = Joi.object({
 
 export const updateProfileBodySchema = Joi.object({
   imageUrl: Joi.string().uri().required(),
-  publicId: Joi.string().required()
+  publicId: Joi.string().required(),
+
+  metadata: Joi.object({
+    size: Joi.number().required(),
+    type: Joi.string().required(),
+    lastModified: Joi.number().optional()
+  }).required()
 });

@@ -21,9 +21,19 @@ export const registerUser = async (req, res, next) => {
 
     const existingUser = await User.findOne({ where: { email } });
 
+    // 1. SAFE CHECK: Only block if user exists AND is already verified
     if (existingUser) {
-      await transaction.rollback();
-      return next(new AppError("User already exists", 400));
+      if (existingUser.isVerified) {
+        await transaction.rollback();
+        return next(new AppError("User already exists", 400));
+      }
+
+      // 2. SELF-HEALING: Clean up pending user and their old codes
+      await VerificationCode.destroy({ 
+        where: { userEmail: email }, 
+        transaction 
+      });
+      await existingUser.destroy({ transaction });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
@@ -154,7 +164,7 @@ export const loginUser = async(req, res, next) => {
         const {email, password} = req.body;
         const existingUser = await User.findOne({where: {email}});
         if(!existingUser){
-            return next(new AppError('sorry you not create an accout', 400));
+            return next(new AppError('No account found with this email address.', 400));
         }; 
 
         const isPasswordValid =  await  bcrypt.compare(password, existingUser.password);

@@ -10,12 +10,19 @@ export const createAnnouncement = async (req, res, next) => {
     const transaction = await dbConnection.transaction();
     try {
         const { mosqueId } = req.params;
-        const { title, content, imageUrl, publicId } = req.body;
+        const { title, content, imageUrl, publicId, metadata } = req.body;
+
+        if (imageUrl && (!metadata || metadata.size > 500000 || !metadata.type.startsWith('image/'))) {
+            await cloudinary.uploader.destroy(publicId).catch(console.error);
+            return next(new AppError('Invalid image constraints.', 400));
+        }
       
 
         // Basic verification: does mosque exist?
         const mosque = await Mosque.findByPk(mosqueId);
-        if (!mosque) {
+       if (!mosque) {
+            // Cleanup new image if mosque not found
+            if (publicId) await cloudinary.uploader.destroy(publicId).catch(console.error);
             return next(new AppError('Mosque not found', 404));
         }
 
@@ -48,6 +55,9 @@ export const createAnnouncement = async (req, res, next) => {
         });
 
     } catch (err) {
+        if (req.body.publicId) {
+            await cloudinary.uploader.destroy(req.body.publicId).catch(console.error);
+        };
         if (transaction && typeof transaction.rollback === 'function') await transaction.rollback();
         const errorContext = {
             url: req.originalUrl,

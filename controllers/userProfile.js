@@ -32,44 +32,54 @@ export const updateUserProfile = async (req, res, next) => {
 
   try {
     const userId = req.user.id;
+    const { imageUrl, publicId, metadata } = req.body;
 
-    const { imageUrl, publicId } = req.body;
+    // 1. Validation
+    if (!metadata || metadata.size > 500000 || !metadata.type.startsWith('image/')) {
+      await cloudinary.uploader.destroy(publicId).catch(console.error);
+      return next(new AppError("Invalid image constraints.", 400));
+    }
 
+    // 2. Fetch record
     const userProfile = await UserProfile.findOne({
       where: { userId },
       transaction,
     });
 
     if (!userProfile) {
+      await cloudinary.uploader.destroy(publicId).catch(console.error);
       await transaction.rollback();
       return next(new AppError("No user profile found", 404));
     }
 
     const oldPublicId = userProfile.publicId;
 
-    // update DB
+    // 3. Update DB
     userProfile.image = imageUrl;
     userProfile.publicId = publicId;
-
     await userProfile.save({ transaction });
 
-    // delete old image from cloudinary
-    if (oldPublicId) {
-      await cloudinary.uploader.destroy(oldPublicId);
-    }
-
+    // 4. Commit changes
     await transaction.commit();
 
-    res.status(200).json({
-      status: "success",
-      message: "User profile updated successfully",
-      userProfile: userProfile.image,
-    });
+    // 5. Cleanup OLD image (non-blocking)
+    if (oldPublicId && oldPublicId !== publicId) {
+      cloudinary.uploader.destroy(oldPublicId).catch(console.error);
+    }
+
+    res.status(200).json({ status: "success", userProfile: userProfile.image });
+
   } catch (err) {
-    await transaction.rollback();
-    const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.body?.email && { email: req.body.email }) };
+
+    // 6. THE JANITOR: Clean up NEW image on failure
+    if (req.body.publicId) {
+      await cloudinary.uploader.destroy(req.body.publicId).catch(console.error);
+    }
+const errorContext = { url: req.originalUrl, method: req.method, ip: req.ip, ...(req.body?.email && { email: req.body.email }) };
     console.error('UPDATE_USER_PROFILE_ERROR: Failed to update user profile', { context: errorContext, error: err });
-    next(new AppError(isDev ? err.message : "Something went wrong while updating profile", 500));
+    
+    if (transaction) await transaction.rollback();
+    next(new AppError(isDev ? err.message : "Update failed", 500));
   }
 };
 

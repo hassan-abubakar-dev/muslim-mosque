@@ -5,7 +5,13 @@ export const createCategorySchema = Joi.object({
   teacherName: Joi.string().trim().min(2).max(100).required(),
   information: Joi.string().trim().max(1000).allow('', null).optional(),
   imageUrl: Joi.string().uri().optional().allow('', null),
-  publicId: Joi.string().optional().allow('', null)
+  publicId: Joi.string().optional().allow('', null),
+
+  metadata: Joi.object({
+    size: Joi.number().required(),
+    type: Joi.string().required(),
+    lastModified: Joi.number().optional()
+  }).optional().allow(null)
 });
 
 export const updateCategorySchema = Joi.object({
@@ -13,7 +19,13 @@ export const updateCategorySchema = Joi.object({
   teacherName: Joi.string().trim().min(2).max(100).optional(),
   information: Joi.string().trim().max(1000).allow('', null).optional(),
   imageUrl: Joi.string().uri().optional().allow('', null),
-  publicId: Joi.string().optional().allow('', null)
+  publicId: Joi.string().optional().allow('', null),
+
+   metadata: Joi.object({
+    size: Joi.number().required(),
+    type: Joi.string().required(),
+    lastModified: Joi.number().optional()
+  }).optional().allow(null)
 }).min(1);
 
 export const idParamSchema = Joi.object({
@@ -23,3 +35,7 @@ export const idParamSchema = Joi.object({
 export const mosqueIdParamSchema = Joi.object({
   mosqueId: Joi.string().uuid().required()
 });
+
+
+
+

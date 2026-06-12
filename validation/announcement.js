@@ -4,7 +4,13 @@ export const announcementSchema = Joi.object({
   title: Joi.string().trim().min(3).max(100).required(),
   content: Joi.string().trim().min(5).max(2000).required(),
   imageUrl: Joi.string().uri().optional().allow(null, ''),
-  publicId: Joi.string().optional().allow(null, '')
+  publicId: Joi.string().optional().allow(null, ''),
+
+  metadata: Joi.object({
+    size: Joi.number().required(),
+    type: Joi.string().required(),
+    lastModified: Joi.number().optional()
+  }).optional().allow(null)
 });
 
 export const paginationSchema = Joi.object({
