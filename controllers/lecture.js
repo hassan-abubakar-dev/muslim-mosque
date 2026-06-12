@@ -1,10 +1,7 @@
-// import Lecture from "../models/lecture.js";
-// import Category from "../models/category.js";
+
 import AppError from "../utils/AppError.js";
 import { deleteFileFromR2 } from "../utils/r2.js";
 import dotenv from "dotenv";
-// import Notification from "../models/Notification.js";
-// import Bookmark from "../models/bookmark.js";
 import { Lecture, Category, Notification, Bookmark } from "../models/relationship.js";
 import { Op } from "sequelize";
 import getLikeOperator from "../utils/dbHelpers.js";
@@ -17,12 +14,8 @@ const isDev = process.env.NODE_ENV === 'development';
 export const saveLectureMetadata = async (req, res, next) => {
   try {
     const { categoryId } = req.params;
-    const { title, type, key, duration, url, thumbnail, videoId, mosqueId } = req.body;
-    console.log(mosqueId, 'lecture controller mosque id')
-
-// all checks goes to validation joi
-
-    // Verify category exists
+    const { title, type, key, duration, url, thumbnail, videoId, mosqueId, metadata } = req.body;
+  
     const category = await Category.findByPk(categoryId);
     if (!category) {
       return next(new AppError("Category not found", 404));
@@ -35,8 +28,21 @@ export const saveLectureMetadata = async (req, res, next) => {
     if (type === "audio" || key) {
       // Audio specific validation
       if (!key) {
+        
         return next(new AppError("Audio file key is required", 400));
-      }
+      };
+
+     const headCommand = new HeadObjectCommand({
+    Bucket: process.env.R2_BUCKET_NAME,
+    Key: key,
+  });
+  const r2Data = await s3.send(headCommand);
+
+  // 2. Validate integrity (Compare R2 size with client-sent metadata size)
+  if (r2Data.ContentLength !== metadata.size) {
+    await deleteFileFromR2(key);
+    return next(new AppError("File integrity check failed (size mismatch)", 400));
+  }
 
       // Build full public URL from R2
       const fileUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
@@ -89,6 +95,9 @@ export const saveLectureMetadata = async (req, res, next) => {
     });
 
   } catch (err) {
+    if(req.body.key){
+      deleteFileFromR2(req.body.key);
+    }
     const errorContext = {
       url: req.originalUrl,
       method: req.method,

@@ -1,8 +1,8 @@
 import Joi from 'joi';
 
 export const lectureParamsSchema = Joi.object({
-  categoryId: Joi.string().uuid().required(),
-  lectureId: Joi.string().uuid().optional() // for deletion
+  // categoryId: Joi.string().uuid().required(),
+  lectureId: Joi.string().uuid().optional() 
 });
 
 export const saveLectureSchema = Joi.object({
@@ -17,6 +17,12 @@ export const saveLectureSchema = Joi.object({
   // Video specific
   videoId: Joi.string().when('type', { is: 'video', then: Joi.required() }),
   thumbnail: Joi.string().uri().optional(),
+
+  metadata: Joi.object({
+    size: Joi.number().required(),
+    type: Joi.string().required(),
+    lastModified: Joi.number().required(),
+  }).when('type', { is: 'audio', then: Joi.required() }),
 });
 
 export const getLecturesQuerySchema = Joi.object({

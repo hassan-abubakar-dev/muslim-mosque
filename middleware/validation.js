@@ -1,3 +1,5 @@
+import AppError from "../utils/AppError.js";
+
 const validate = (schema, property = 'body') => {
   return (req, res, next) => {
     const { error, value } = schema.validate(req[property], {

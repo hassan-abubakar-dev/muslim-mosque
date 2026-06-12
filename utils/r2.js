@@ -9,11 +9,7 @@ dotenv.config();
 
 export const generateUploadUrl = async (req, res, next) => {
   try {
-    const { fileName, fileType } = req.body;
-
-    if (!fileName || !fileType) {
-      return next(new AppError("Missing file info", 400));
-    }
+    const { fileName, fileType, fileSize } = req.body;
 
     // 🔥 ALLOWED TYPES
     const allowedTypes = ["audio/", "image/"];
@@ -46,12 +42,15 @@ export const generateUploadUrl = async (req, res, next) => {
 
     const uniqueId = crypto.randomUUID();
 
-    const key = `lectures/${uniqueId}/${crypto.randomUUID()}-${fileName}`;
+// Quick sanitize: only keep alphanumeric, dots, and hyphens
+const sanitizedFileName = fileName.replace(/[^a-z0-9.-]/gi, '_');
+const key = `lectures/${uniqueId}/${crypto.randomUUID()}-${sanitizedFileName}`;
 
     const command = new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME,
       Key: key,
       ContentType: fileType,
+      ContentLength: fileSize,
     });
 
     const uploadUrl = await getSignedUrl(s3, command, {
@@ -85,55 +84,5 @@ export const deleteFileFromR2 = async (key) => {
   } catch (error) {
     console.error("❌ R2 delete error:", error.message);
     throw error;
-  }
-};
-
-
-export const getLectures = async (req, res, next) => {
-  try {
-    const { categoryId } = req.params;
-
-    let { page = 1, limit = 10 } = req.query;
-
-    page = parseInt(page);
-    limit = parseInt(limit);
-
-    if (page < 1) page = 1;
-    if (limit < 1) limit = 10;
-
-    const offset = (page - 1) * limit;
-
-    // optional filter by category
-    const whereClause = categoryId ? { categoryId } : {};
-
-    const { rows: lectures, count: totalItems } = await Lecture.findAndCountAll({
-      where: whereClause,
-      limit,
-      offset,
-      order: [["createdAt", "DESC"]],
-    });
-
-    const totalPages = Math.ceil(totalItems / limit);
-
-    res.status(200).json({
-      success: true,
-      currentPage: page,
-      totalPages,
-      totalItems,
-      pageSize: limit,
-      lectures,
-    });
-
-  } catch (err) {
-    console.error("Get lectures error:", err.message);
-
-    next(
-      new AppError(
-        process.env.NODE_ENV === "development"
-          ? err.message
-          : "Failed to fetch lectures",
-        500
-      )
-    );
   }
 };
