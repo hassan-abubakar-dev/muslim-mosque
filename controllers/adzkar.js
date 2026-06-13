@@ -10,9 +10,11 @@ export const getAllAdzkar = (req, res, next) => {
         const adzkarList = adzkar.map(a => ({
             id: a.id,
             type: a.type,
+            count: a.count || 1,
             count_description: a.count_description,
             fadl: a.fadl,
             audio: a.audio,
+            content: a.content || "",
             languages: a.languages
         }));    
         res.status(200).json({

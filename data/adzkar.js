@@ -903,7 +903,7 @@ const adzkar = englishAdzkar.map(en => {
     type: ar?.type ?? en.type ?? 0,
     count: ar?.count ?? en.count ?? 1,
     audio: ar?.audio || en.audio || "",
-    content: ar?.content || en.content || "",
+    content: ar?.content || "",
     languages: {
       ar: {
         count_description: ar?.count_description || "",
@@ -914,7 +914,6 @@ const adzkar = englishAdzkar.map(en => {
       },
       en: {
         translation: en.translation || "",
-        transliteration: en.transliteration || "",
         count_description: en.count_description || "",
         fadl: en.fadl || "",
         source: en.source || "",
