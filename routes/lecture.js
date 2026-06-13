@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import { saveLectureMetadata, deleteLecture, getLectures, getLectureCount } from '../controllers/lecture.js';
-import { lectureParamsSchema, saveLectureSchema, getLecturesQuerySchema } from '../validation/lecture.js';
+import { lectureParamsSchema, saveLectureSchema, getLecturesQuerySchema, deleteLectureSchema } from '../validation/lecture.js';
 import validate from '../middleware/validation.js';
 
 dotenv.config();
@@ -16,8 +16,8 @@ router.post('/save-metadata/:categoryId',
     saveLectureMetadata
 );
 
-router.delete('/delete-lecture/:lectureId', 
-    validate(lectureParamsSchema, 'params'), 
+router.delete('/delete-lecture/:id', 
+   validate(deleteLectureSchema, 'params-query'),
     deleteLecture
 );
 

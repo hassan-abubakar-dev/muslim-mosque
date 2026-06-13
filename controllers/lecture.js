@@ -113,12 +113,18 @@ export const saveLectureMetadata = async (req, res, next) => {
 
 export const deleteLecture = async (req, res, next) => {
   try {
-    const id = req.params.lectureId;
+    const {id} = req.params;
+    const { categoryId } = req.query;
 
-    const lecture = await Lecture.findByPk(id);
+    const lecture = await Lecture.findOne({
+      where: { 
+        id,
+        categoryId: categoryId 
+      }
+    });
 
     if (!lecture) {
-      return next(new AppError("Lecture not found", 404));
+      return next(new AppError("Lecture not found or does not belong to this category", 404));
     }
 
     // 🔥 delete file from R2 (if exists)

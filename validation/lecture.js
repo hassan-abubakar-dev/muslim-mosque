@@ -1,7 +1,7 @@
 import Joi from 'joi';
 
 export const lectureParamsSchema = Joi.object({
-  // categoryId: Joi.string().uuid().required(),
+  categoryId: Joi.string().uuid().required(),
   lectureId: Joi.string().uuid().optional() 
 });
 
@@ -31,4 +31,9 @@ export const getLecturesQuerySchema = Joi.object({
   limit: Joi.number().integer().min(1).max(50).default(10),
   search: Joi.string().trim().allow(''),
   type: Joi.string().valid('audio', 'video').optional()
+});
+
+export const deleteLectureSchema = Joi.object({
+  lectureId: Joi.string().uuid().required(),
+  categoryId: Joi.string().uuid().required(), // Pass this in the query string
 });
