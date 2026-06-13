@@ -14,9 +14,12 @@ export const getVideoLibrary = async (req, res, next) => {
   try {
     const userId = req.user.id;
     
+    
     // get data fro query
- const { page, limit, search: searchTerm } = req.query;
-    const offset = (page - 1) * limit;
+const page = parseInt(req.query.page, 10) || 1;
+    const limit = parseInt(req.query.limit, 10) || 10;
+    const searchTerm = req.query.search || '';
+const offset = (page - 1) * limit;
 
     // 2. Define filter
     const lectureWhere = { type: 'video' };
@@ -50,20 +53,24 @@ export const getVideoLibrary = async (req, res, next) => {
     });
 
     // 4. Format and sanitize
-    const formattedLibrary = libraryItems.map(item => {
-      const lec = item.lectureLibrary?.get({ plain: true }) || {};
-      return {
-        id: lec.id,
-        title: lec.title,
-        addedToLibraryAt: item.createdAt,
-        mosqueName: lec.category?.mosqueCategory?.name || "General Lecture"
-      };
-    });
+   // 4. Format and sanitize
+const formattedLibrary = libraryItems.map(item => {
+  const lec = item.lectureLibrary?.get({ plain: true }) || {};
+  
+  return {
+    ...lec,
+    id: lec.id, 
+    title: lec.title,
+    addedToLibraryAt: item.createdAt,
+    mosqueName: lec.category?.mosqueCategory?.name || "General Lecture"
+  };
+});
 
     return res.status(200).json({
       status: 'success',
       totalResults: count,
       totalPages: Math.ceil(count / limit),
+      hasMore: page < Math.ceil(count / limit),
       currentPage: page,
       library: formattedLibrary
     });

@@ -5,6 +5,8 @@ import dotenv from "dotenv";
 import { Lecture, Category, Notification, Bookmark } from "../models/relationship.js";
 import { Op } from "sequelize";
 import getLikeOperator from "../utils/dbHelpers.js";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import s3 from "../config/s3.js";
 
 dotenv.config();
 const isDev = process.env.NODE_ENV === 'development';

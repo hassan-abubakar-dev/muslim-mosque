@@ -42,7 +42,7 @@ export const verifyCodeLimiter = createLimiter(
 // 3. API Limiter: 100 requests per 15 minutes
 // Standard limit for general data fetching
 export const apiLimiter = createLimiter(
-    100, 
+    2000, 
     15, 
     'Too many requests from this IP. Please try again later.'
 );
